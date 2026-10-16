@@ -1,0 +1,23 @@
+name: 实验记录
+description: 记录假设、固定条件、配置与结果
+title: "[Experiment] "
+body:
+  - type: textarea
+    id: hypothesis
+    attributes:
+      label: 假设与对照
+      description: 说明为什么做此实验，改变什么，固定什么。
+    validations:
+      required: true
+  - type: textarea
+    id: setup
+    attributes:
+      label: 数据、配置与运行环境
+      description: 数据划分/校验值、Git revision、配置路径、GPU、运行目录、真实或 Mock。
+    validations:
+      required: true
+  - type: textarea
+    id: results
+    attributes:
+      label: 结果与案例
+      description: EM/F1、修正次数、耗时、纠错/误改率；无改善也要如实记录。

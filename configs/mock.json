@@ -1,0 +1,9 @@
+{
+  "mode": "critique",
+  "retriever": "bm25",
+  "top_k": 10,
+  "max_revisions": 2,
+  "format_retries": 1,
+  "generator": {"backend": "mock"},
+  "critic": {"backend": "mock"}
+}

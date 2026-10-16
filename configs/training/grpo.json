@@ -1,0 +1,25 @@
+{
+  "model": {
+    "backend": "hf", "model": "meta-llama/Llama-3.1-8B-Instruct",
+    "adapter": "checkpoints/critic-sft", "device_map": "cuda:0",
+    "dtype": "bfloat16", "load_in_4bit": true
+  },
+  "generator": {
+    "backend": "http", "model": "Qwen/Qwen2.5-7B-Instruct",
+    "base_url": "http://127.0.0.1:8000/v1", "temperature": 0.0,
+    "max_new_tokens": 384
+  },
+  "reward": {
+    "final_em": 1.0, "em_gain": 0.5, "f1_gain": 0.1,
+    "revision_cost": 0.05, "invalid_penalty": 1.0
+  },
+  "training": {
+    "output_dir": "checkpoints/critic-grpo", "max_steps": 100,
+    "per_device_train_batch_size": 2, "gradient_accumulation_steps": 4,
+    "num_generations": 2, "max_prompt_length": 8192, "max_completion_length": 256,
+    "learning_rate": 0.000005, "beta": 0.04,
+    "bf16": true, "gradient_checkpointing": true,
+    "logging_steps": 5, "save_steps": 50, "save_total_limit": 2,
+    "report_to": "none", "seed": 42, "remove_unused_columns": false
+  }
+}

@@ -1,0 +1,25 @@
+name: 模块开发任务
+description: 认领一项有明确接口和验收条件的任务
+title: "[Task] "
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: 目标与负责人
+      description: 写出负责人、模块和本次具体结果。
+    validations:
+      required: true
+  - type: textarea
+    id: contract
+    attributes:
+      label: 输入、输出与依赖
+      description: 关联 schema、配置、上游 Issue 和需要协调的使用方。
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 验收条件
+      description: 使用可以运行的命令、具体文件或可观察行为。
+    validations:
+      required: true

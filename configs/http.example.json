@@ -1,0 +1,12 @@
+{
+  "mode": "critique", "retriever": "bm25", "top_k": 10,
+  "max_revisions": 2, "format_retries": 1,
+  "generator": {
+    "backend": "http", "model": "Qwen/Qwen2.5-7B-Instruct",
+    "base_url": "http://127.0.0.1:8000/v1", "temperature": 0.0
+  },
+  "critic": {
+    "backend": "http", "model": "critic-sft",
+    "base_url": "http://127.0.0.1:8001/v1", "temperature": 0.0
+  }
+}

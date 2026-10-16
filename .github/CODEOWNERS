@@ -1,0 +1,12 @@
+# Fill in real GitHub usernames after teammates accept invitations.
+# These commented examples do not activate code ownership.
+# /src/raglab/data.py @DATA_OWNER
+# /src/raglab/retrieval.py @RETRIEVAL_OWNER
+# /src/raglab/models.py @MODEL_OWNER
+# /src/raglab/pipeline.py @PIPELINE_OWNER
+# /src/raglab/training/annotations.py @ANNOTATION_OWNER
+# /src/raglab/training/sft.py @SFT_OWNER
+# /src/raglab/training/grpo.py @RL_OWNER
+# /src/raglab/training/rewards.py @RL_OWNER
+# /src/raglab/evaluation.py @EVALUATION_OWNER
+# /src/raglab/demo.py @DEMO_OWNER

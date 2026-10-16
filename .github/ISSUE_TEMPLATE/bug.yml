@@ -1,0 +1,18 @@
+name: Bug
+description: 报告可复现的错误
+title: "[Bug] "
+body:
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现命令与预期/实际行为
+      description: 优先使用虚构 fixtures，避免贴出 Token 或整份私有数据。
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境与版本
+      description: Python、Git commit、配置、GPU、关键依赖；日志请去除凭证。
+    validations:
+      required: true

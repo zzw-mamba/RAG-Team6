@@ -1,0 +1,29 @@
+[
+  {
+    "id": 0,
+    "question": "In this synthetic example, where was the director of Blue Lantern born?",
+    "answers": ["Harbor City"],
+    "qa_pairs": null,
+    "rationale": "Synthetic fixture, not a Kaggle sample or authoritative model rationale.",
+    "ctxs": [
+      {"id": "film", "title": "Blue Lantern", "text": "Blue Lantern was directed by Mira Vale."},
+      {"id": "person", "title": "Mira Vale", "text": "Mira Vale was born in Harbor City. DemoFact: answer=Harbor City; draft=River City"},
+      {"id": "noise", "title": "River City", "text": "River City hosts a film festival."}
+    ]
+  },
+  {
+    "id": 1,
+    "question": "In this synthetic example, which film premiered first, Dawn or Dusk?",
+    "answers": ["Dawn"],
+    "ctxs": [
+      {"id": "dawn", "title": "Dawn", "text": "Dawn premiered in 2001. DemoFact: answer=Dawn; draft=Dusk"},
+      {"id": "dusk", "title": "Dusk", "text": "Dusk premiered in 2007."}
+    ]
+  },
+  {
+    "id": 2,
+    "question": "In this synthetic example, is Mira Vale a director?",
+    "answers": ["yes"],
+    "ctxs": [{"id": "mira", "title": "Mira Vale", "text": "Mira Vale directed Blue Lantern. DemoFact: answer=yes; draft=yes"}]
+  }
+]
