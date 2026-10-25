@@ -5,6 +5,10 @@ __pycache__/
 build/
 dist/
 work/
+wheelhouse/
+*.whl
+*.tar.gz
+*.tar
 *.sqlite*
 *.safetensors
 *.pt

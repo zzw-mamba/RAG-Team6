@@ -11,6 +11,17 @@
 
 这是完整实现，包含真实模型调用、批判LoRA训练、GRPO反向传播、检查点、验证、三组对照和CSV导出。**它不包含上一份报告中的pilot12权重，也没有在你的AutoDL GPU上实际测过准确率。** 先执行下面的真实GPU smoke检查，再正式训练。不能承诺直接复现57.81%，也不预设RL一定优于普通RAG。
 
+## 环境也可以打包复用
+
+本项目训练需要PyTorch，但不必每台机器都重新联网安装。已提供[环境打包说明](environment/README.md)、`Dockerfile`和离线依赖包工具。当前AutoDL是Linux x86_64、Python3.10，离线包应在同系统架构、同Python主/次版本机器准备一次：
+
+```bash
+bash scripts/download_env.sh
+WHEELHOUSE="$PWD/.cache/wheelhouse" bash run_all.sh
+```
+
+第一步仍需下载一次；可在网络正常的另一台Linux机器准备好，再把整个wheelhouse搬过来。第二步使用校验后的本地文件离线安装。下载将Torch本体与NVIDIA依赖分源处理，并增加重试；已经完成的wheel保留复用。仓库提供打包工具，不内置数GB依赖或已构建镜像。Docker方案用于有Docker管理权限的主机，不假定AutoDL容器内还能启动Docker。
+
 ## 一键运行全部流程
 
 已经克隆仓库后，在服务器执行：
