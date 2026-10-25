@@ -1,0 +1,27 @@
+# Complete non-Torch dependency closure. Installer always uses --no-deps.
+# Inherit torch + NVIDIA runtime from the Qwen image; do not fetch CUDA wheels.
+numpy==1.26.4
+transformers==4.45.2
+tokenizers==0.20.3
+peft==0.13.2
+accelerate==0.34.2
+bitsandbytes==0.43.3
+safetensors==0.4.5
+sentencepiece==0.2.0
+ijson==3.4.0
+tqdm==4.67.1
+huggingface-hub==0.25.2
+packaging==24.2
+psutil==6.1.1
+PyYAML==6.0.2
+filelock==3.16.1
+fsspec==2024.9.0
+regex==2024.11.6
+requests==2.32.5
+charset-normalizer==3.4.4
+idna==3.11
+urllib3==2.6.3
+certifi==2026.2.25
+typing-extensions==4.12.2
+setuptools==80.9.0
+wheel==0.45.1

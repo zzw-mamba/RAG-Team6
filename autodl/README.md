@@ -11,6 +11,40 @@
 
 这是完整实现，包含真实模型调用、批判LoRA训练、GRPO反向传播、检查点、验证、三组对照和CSV导出。**它不包含上一份报告中的pilot12权重，也没有在你的AutoDL GPU上实际测过准确率。** 先执行下面的真实GPU smoke检查，再正式训练。不能承诺直接复现57.81%，也不预设RL一定优于普通RAG。
 
+## 直接使用 AutoDL.Art Qwen2.5 镜像（PyTorch 2.2.2 / CUDA 11.8）
+
+镜像兼容版本位于 `feat/autodl-qwen-image` 分支。已有仓库执行：
+
+```bash
+cd /root/autodl-tmp/RAG-Team6
+git fetch origin
+git switch feat/autodl-qwen-image
+git pull --ff-only
+cd autodl
+bash run_qwen_image.sh
+```
+
+专用入口自动使用镜像的 `/root/Qwen2.5/text-generation-webui/installer_files/env/bin/python`，无需手动激活 Conda。它创建继承镜像 Torch 的项目 `.venv`；旧项目环境先重命名备份为 `.venv.backup-*`。安装前检查镜像 Torch/CUDA 可用性，**不会安装或升级 Torch，也不会解析下载 NVIDIA CUDA 依赖**。首次仍需安装固定版本的项目依赖（其中 bitsandbytes 有一定体积），默认使用清华 PyPI 镜像；网络失败会停止，重跑同一入口即可。
+
+兼容栈固定为 Transformers 4.45.2、PEFT 0.13.2、Accelerate 0.34.2、bitsandbytes 0.43.3、NumPy 1.26.4，详见 [依赖清单](environment/requirements-qwen-image.txt)。这些包只安装在项目 `.venv`，镜像的聊天 WebUI 环境保持独立。训练概率计算适配旧版 `num_logits_to_keep` 接口，保留 LoRA/GRPO、冻结回答模型和检查点恢复流程。
+
+使用 [configs/autodl-qwen-image.json](configs/autodl-qwen-image.json)：Qwen 路径为 `/root/Qwen2.5/text-generation-webui/models`；LLaMA、数据、输出仍使用上表路径。Qwen 的 models 下须有唯一的 7B Instruct HF 模型目录；有多个时请复制配置，将 `qwen_path` 指向具体目录，再通过 `CONFIG=/absolute/path/config.json bash run_qwen_image.sh` 启动。两个模型都需要原始 HF **safetensors** 权重和 tokenizer，不能把 GGUF/AWQ/GPTQ 文件直接交给此 NF4 训练入口。镜像页面没有说明自带 LLaMA，需要保留你已准备的 LLaMA 权重。
+
+原来的 `bash run_all.sh` 和 `bash scripts/install.sh` 也会在检测到镜像 Python 时自动选择兼容模式；`RAG_ENV_PROFILE=modern` 可使用下文原安装方式。兼容模式的 `--from`、`--skip-predict`、日志和恢复规则与原入口一致，例如：
+
+```bash
+# 先完成训练和独立评估
+bash run_qwen_image.sh --skip-predict
+
+# 训练中断后沿用已有检查点
+bash run_qwen_image.sh --from train
+
+# 镜像的 Python 安装位置与官方说明不同时指定实际路径
+IMAGE_PYTHON=/actual/image/env/bin/python bash run_qwen_image.sh
+```
+
+项目已在真实 PyTorch 2.2.2 的 CPU 环境通过微型 Qwen/LLaMA、LoRA 梯度及断点恢复测试；7B/8B 的 GPU 量化、显存和最终效果仍需入口中的真实 smoke 验证。无需启动镜像的 `python server.py` 聊天服务。
+
 ## 环境也可以打包复用
 
 本项目训练需要PyTorch，但不必每台机器都重新联网安装。已提供[环境打包说明](environment/README.md)、`Dockerfile`和离线依赖包工具。当前AutoDL是Linux x86_64、Python3.10，离线包应在同系统架构、同Python主/次版本机器准备一次：
@@ -64,9 +98,9 @@ bash run_all.sh --from predict
 
 仍支持`CONFIG`、`RUN_NAME`、`PILOT_GROUPS`、`SAVE_EVERY`、`RESUME`和`WARM_START`。例如`PILOT_GROUPS=16 SAVE_EVERY=4 bash run_all.sh`自动使用名称`pilot16`；如手动指定`RUN_NAME`则优先使用该值。各阶段沿用原有恢复约束，第一次检查点之前中断的训练不会被伪装成可精确恢复。原来的`bash scripts/all.sh`也会转到这个完整入口。
 
-## 一、上传与安装
+## 一、通用 CUDA 镜像的上传与安装
 
-推荐选择 AutoDL 的 **Python 3.11/3.12、GPU可用**环境，以及支持BF16的RTX4090/L20/L40S/A系列等显卡。安装脚本复用已有的可用CUDA PyTorch；如果没有Torch、只有CPU版或版本低于2.6，则在项目`.venv`里安装`torch==2.8.0`的CUDA12.8构建，不修改Miniconda base，也不重装系统CUDA。默认NF4量化两模型，并使用梯度检查点；实际峰值显存需通过smoke确认。
+此节对应 `RAG_ENV_PROFILE=modern`；使用上方 Qwen 镜像专用入口时不执行这里的 Torch 升级。通用环境推荐选择 AutoDL 的 **Python 3.11/3.12、GPU可用**环境，以及支持BF16的RTX4090/L20/L40S/A系列等显卡。安装脚本复用已有的可用CUDA PyTorch；如果没有Torch、只有CPU版或版本低于2.6，则在项目`.venv`里安装`torch==2.8.0`的CUDA12.8构建，不修改Miniconda base，也不重装系统CUDA。默认NF4量化两模型，并使用梯度检查点；实际峰值显存需通过smoke确认。
 
 在 AutoDL 终端克隆团队仓库并进入训练目录：
 
@@ -106,7 +140,7 @@ python -c 'import sys,torch; print(sys.executable); print(torch.__version__); pr
 └── sample_submission.csv
 ```
 
-模型目录必须有HF格式的`config.json`、权重分片和tokenizer文件。`/root/Qwen2.5`若只是父目录，代码会寻找一层或两层下唯一的模型目录；存在多个候选就明确报错。不会把名称相近的其他大小模型静默替换进来。NF4训练入口使用原始BF16/FP16权重，不接受预先量化的AWQ/GPTQ权重。
+模型目录必须有HF格式的`config.json`、safetensors权重分片和tokenizer文件。`/root/Qwen2.5`若只是父目录，代码会寻找一层或两层下唯一的模型目录；存在多个候选就明确报错。不会把名称相近的其他大小模型静默替换进来。NF4训练入口使用原始BF16/FP16权重，不接受预先量化的AWQ/GPTQ权重。
 
 ## 二、第一次运行：准备数据和真实GPU检查
 

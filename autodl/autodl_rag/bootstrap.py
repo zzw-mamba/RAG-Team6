@@ -32,18 +32,18 @@ def inspect_torch():
         return {"status": "broken", "python": sys.executable, "error": str(exc)}
 
 
-def install_needed(state):
+def install_needed(state, minimum=(2, 6)):
     if state["status"] == "missing":
         return True
     if state["status"] != "present":
         raise RuntimeError(
             f"PyTorch import is broken: {state}. Check this environment before training."
         )
-    match = re.match(r"(\d+)\.(\d+)", str(state["version"]))
+    match = re.match(r"(\d+)\.(\d+)\.(\d+)", str(state["version"]))
     if not match:
         raise RuntimeError(f"Unrecognized torch version: {state['version']}")
     version = tuple(map(int, match.groups()))
-    if not state["cuda_runtime"] or version < (2, 6):
+    if not state["cuda_runtime"] or version < minimum:
         return True
     if not state["cuda_available"]:
         raise RuntimeError(
@@ -68,10 +68,21 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--index-url", default=TORCH_INDEX)
     parser.add_argument("--verify-only", action="store_true")
+    parser.add_argument(
+        "--reuse-image",
+        action="store_true",
+        help="Accept CUDA torch >=2.2.2; never download or replace torch",
+    )
     args = parser.parse_args(argv)
     state = inspect_torch()
     print(json.dumps(state, ensure_ascii=False, indent=2), flush=True)
-    needed = install_needed(state)
+    minimum = (2, 2, 2) if args.reuse_image else (2, 6)
+    needed = install_needed(state, minimum)
+    if needed and args.reuse_image:
+        raise RuntimeError(
+            "The Qwen image entry needs its existing working CUDA PyTorch >=2.2.2. "
+            "Use the image Python; torch will not be downloaded by this entry."
+        )
     if args.verify_only:
         if needed:
             raise RuntimeError("CUDA PyTorch >=2.6 is still missing in this interpreter")

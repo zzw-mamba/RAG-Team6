@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
+IMAGE_PYTHON="${IMAGE_PYTHON:-/root/Qwen2.5/text-generation-webui/installer_files/env/bin/python}"
+if [[ -z "${RAG_ENV_PROFILE:-}" && -x "$IMAGE_PYTHON" ]]; then
+  export RAG_ENV_PROFILE=qwen-image
+fi
+if [[ "${RAG_ENV_PROFILE:-}" == qwen-image ]]; then
+  exec bash scripts/install_qwen_image.sh
+fi
 BASE_PYTHON="${PYTHON:-python}"
 "$BASE_PYTHON" -c 'import sys; assert sys.version_info >= (3,10), "Use Python >=3.10"; print("Base Python:",sys.executable,sys.version)'
 if [[ ! -x .venv/bin/python ]]; then

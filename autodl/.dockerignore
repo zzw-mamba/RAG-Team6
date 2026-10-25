@@ -1,5 +1,6 @@
 .git
 .venv
+.venv.backup-*
 .cache
 .ruff_cache
 __pycache__

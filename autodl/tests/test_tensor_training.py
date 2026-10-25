@@ -76,6 +76,51 @@ class TensorTests(unittest.TestCase):
         torch.manual_seed(42)
         self.cfg = {"temperature": 0.8}
 
+    def test_tiny_qwen_generation_and_llama31_rope_forward(self):
+        import torch
+        from transformers import LlamaConfig, LlamaForCausalLM, Qwen2Config, Qwen2ForCausalLM
+
+        common = dict(
+            vocab_size=32,
+            hidden_size=32,
+            intermediate_size=64,
+            num_hidden_layers=1,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            max_position_embeddings=1024,
+            pad_token_id=0,
+            bos_token_id=1,
+            eos_token_id=2,
+        )
+        qwen = Qwen2ForCausalLM(Qwen2Config(**common)).eval()
+        ids = torch.tensor([[1, 4, 5]])
+        with torch.no_grad():
+            output = qwen.generate(
+                ids,
+                attention_mask=torch.ones_like(ids),
+                do_sample=False,
+                max_new_tokens=2,
+                min_new_tokens=2,
+            )
+        self.assertEqual(output.shape, (1, 5))
+        torch.testing.assert_close(output[:, :3], ids)
+        llama = LlamaForCausalLM(
+            LlamaConfig(
+                **common,
+                rope_scaling={
+                    "rope_type": "llama3",
+                    "factor": 8.0,
+                    "low_freq_factor": 1.0,
+                    "high_freq_factor": 4.0,
+                    "original_max_position_embeddings": 128,
+                },
+            )
+        ).eval()
+        with torch.no_grad():
+            logits = llama(input_ids=ids, use_cache=False).logits
+        self.assertEqual(logits.shape, (1, 3, 32))
+        self.assertTrue(bool(torch.isfinite(logits).all()))
+
     def test_completion_logprobs_match_full_causal_forward(self):
         import torch
 

@@ -23,7 +23,14 @@ class LauncherTests(unittest.TestCase):
         self.trace = self.root / "trace.txt"
         self.logs = self.root / "logs with spaces"
         self.env = {**os.environ, "TRACE": str(self.trace), "LOG_DIR": str(self.logs)}
-        for name in ("CONFIG", "RUN_NAME", "PILOT_GROUPS", "FAIL_STAGE"):
+        for name in (
+            "CONFIG",
+            "RUN_NAME",
+            "PILOT_GROUPS",
+            "FAIL_STAGE",
+            "RAG_ENV_PROFILE",
+            "IMAGE_PYTHON",
+        ):
             self.env.pop(name, None)
         for stage, script in (
             ("install", "install.sh"),
@@ -82,6 +89,20 @@ class LauncherTests(unittest.TestCase):
         result = self.run_launcher("--from", "evaluate", "--skip-predict")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.trace.read_text().splitlines(), ["evaluate"])
+
+    def test_existing_image_python_selects_compatible_config_automatically(self):
+        image_python = self.root / "image python"
+        image_python.write_text("#!/bin/sh\nexit 0\n")
+        image_python.chmod(0o755)
+        (self.project / "configs/autodl-qwen-image.json").write_text("{}")
+        self.env["IMAGE_PYTHON"] = str(image_python)
+        result = self.run_launcher("--from", "evaluate", "--skip-predict")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("autodl-qwen-image.json", result.stdout)
+        self.env["RAG_ENV_PROFILE"] = "modern"
+        result = self.run_launcher("--from", "evaluate", "--skip-predict")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("autodl-qwen-image.json", result.stdout)
 
     def test_help_and_invalid_arguments_never_start_stages(self):
         self.assertEqual(self.run_launcher("--help").returncode, 0)

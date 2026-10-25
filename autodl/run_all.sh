@@ -16,6 +16,7 @@ usage() {
 --help          显示说明，不启动任务
 
 支持原有环境变量：CONFIG、RUN_NAME、PILOT_GROUPS、SAVE_EVERY、RESUME、WARM_START。
+检测到 Qwen 镜像 Python 时自动复用其 torch；RAG_ENV_PROFILE=modern 可选择原安装方式。
 日志默认写入 autodl/.cache/run-all/；LOG_DIR 可指定其他日志目录。
 HELP
 }
@@ -41,7 +42,15 @@ case "$START_STAGE" in
   *) printf '未知起始阶段：%s\n' "$START_STAGE" >&2; exit 2 ;;
 esac
 
-export CONFIG="${CONFIG:-configs/autodl.json}"
+IMAGE_PYTHON="${IMAGE_PYTHON:-/root/Qwen2.5/text-generation-webui/installer_files/env/bin/python}"
+if [[ -z "${RAG_ENV_PROFILE:-}" && -x "$IMAGE_PYTHON" ]]; then
+  export RAG_ENV_PROFILE=qwen-image
+fi
+if [[ "${RAG_ENV_PROFILE:-}" == qwen-image ]]; then
+  export CONFIG="${CONFIG:-configs/autodl-qwen-image.json}"
+else
+  export CONFIG="${CONFIG:-configs/autodl.json}"
+fi
 if [[ "$CONFIG" != /* ]]; then CONFIG="$PROJECT_DIR/$CONFIG"; fi
 if [[ ! -f "$CONFIG" ]]; then printf '配置文件不存在：%s\n' "$CONFIG" >&2; exit 2; fi
 export RUN_NAME="${RUN_NAME:-pilot${PILOT_GROUPS:-64}}"

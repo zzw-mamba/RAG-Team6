@@ -1,11 +1,22 @@
 from __future__ import annotations
 
 import contextlib
+import inspect
 import json
 import random
 from pathlib import Path
 
 from .core import digest_file, read_json
+
+
+def completion_logits_options(model, count):
+    """Transformers renamed this memory-saving LLaMA argument after 4.45."""
+    base = model.get_base_model() if hasattr(model, "get_base_model") else model
+    parameters = inspect.signature(base.forward).parameters
+    for name in ("logits_to_keep", "num_logits_to_keep"):
+        if name in parameters:
+            return {name: count}
+    return {}
 
 
 def resolve_model(path):
@@ -94,6 +105,7 @@ class LocalModel:
             "attn_implementation": "sdpa",
             "local_files_only": True,
             "trust_remote_code": False,
+            "use_safetensors": True,
         }
         if cfg["load_in_4bit"]:
             if model_config.get("quantization_config"):
@@ -270,13 +282,13 @@ class LocalModel:
                 device_type, dtype=self.dtype, enabled=device_type == "cuda"
             ),
         ):
-            # LLaMA 4.56 supports logits_to_keep; avoid allocating full prompt*vocabulary logits.
+            # Keep only completion positions on both Transformers 4.45 and 4.56.
             logits = self.model(
                 input_ids=ids,
                 attention_mask=torch.ones_like(ids),
                 use_cache=False,
-                logits_to_keep=len(completion) + 1,
-            ).logits[0, :-1]
+                **completion_logits_options(self.model, len(completion) + 1),
+            ).logits[0, -(len(completion) + 1) : -1]
             targets = torch.tensor(completion, device=ids.device)
             lp = -F.cross_entropy(
                 (logits / self.cfg["temperature"]).float(), targets, reduction="none"
@@ -342,8 +354,8 @@ def doctor(cfg):
 
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA unavailable; choose a PyTorch CUDA AutoDL image")
-    if Version(torch.__version__.split("+")[0]) < Version("2.6"):
-        raise RuntimeError("Choose an AutoDL image with PyTorch >=2.6")
+    if Version(torch.__version__.split("+")[0]) < Version("2.2.2"):
+        raise RuntimeError("This training entry requires CUDA PyTorch >=2.2.2")
     results = {
         "torch": torch.__version__,
         "cuda": torch.version.cuda,
@@ -363,6 +375,10 @@ def doctor(cfg):
         ("critic", "llama_path", ("llama", 4096, 32)),
     ):
         path = resolve_model(cfg[key])
+        if not list(path.glob("*.safetensors")):
+            raise FileNotFoundError(
+                f"{role}: safetensors weights required in {path}; use original HF safetensors files"
+            )
         mc = read_json(path / "config.json")
         actual = tuple(
             mc.get(k) for k in ("model_type", "hidden_size", "num_hidden_layers")
