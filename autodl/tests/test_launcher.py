@@ -32,6 +32,10 @@ class LauncherTests(unittest.TestCase):
             "IMAGE_PYTHON",
         ):
             self.env.pop(name, None)
+        # Removing IMAGE_PYTHON would expose the real host's /root default.
+        # Ordinary stage fixtures have only the modern config. Tests that need
+        # image detection explicitly replace this absent, fixture-local path.
+        self.env["IMAGE_PYTHON"] = str(self.root / "absent image python")
         for stage, script in (
             ("install", "install.sh"),
             ("prepare", "prepare.sh"),
@@ -103,6 +107,23 @@ class LauncherTests(unittest.TestCase):
         result = self.run_launcher("--from", "evaluate", "--skip-predict")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn("autodl-qwen-image.json", result.stdout)
+
+    def test_stage_tests_ignore_an_existing_host_image_at_default_path(self):
+        # Reproduce an AutoDL host on any OS without creating real /root files.
+        host_python = self.root / "host image python"
+        host_python.write_text("#!/bin/sh\nexit 0\n")
+        host_python.chmod(0o755)
+        launcher = self.project / "run_all.sh"
+        launcher.write_text(
+            launcher.read_text().replace(
+                "/root/Qwen2.5/text-generation-webui/installer_files/env/bin/python",
+                str(host_python),
+            )
+        )
+        result = self.run_launcher("--from", "evaluate", "--skip-predict")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("configs/autodl.json", result.stdout)
+        self.assertEqual(self.trace.read_text().splitlines(), ["evaluate"])
 
     def test_help_and_invalid_arguments_never_start_stages(self):
         self.assertEqual(self.run_launcher("--help").returncode, 0)
