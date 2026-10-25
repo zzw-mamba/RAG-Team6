@@ -12,6 +12,7 @@ import subprocess
 import sys
 
 TORCH_INDEX = "https://download.pytorch.org/whl/cu128"
+MIN_IMAGE_TORCH = (2, 2, 1)
 
 
 def inspect_torch():
@@ -71,16 +72,16 @@ def main(argv=None):
     parser.add_argument(
         "--reuse-image",
         action="store_true",
-        help="Accept CUDA torch >=2.2.2; never download or replace torch",
+        help="Accept CUDA torch >=2.2.1; never download or replace torch",
     )
     args = parser.parse_args(argv)
     state = inspect_torch()
     print(json.dumps(state, ensure_ascii=False, indent=2), flush=True)
-    minimum = (2, 2, 2) if args.reuse_image else (2, 6)
+    minimum = MIN_IMAGE_TORCH if args.reuse_image else (2, 6)
     needed = install_needed(state, minimum)
     if needed and args.reuse_image:
         raise RuntimeError(
-            "The Qwen image entry needs its existing working CUDA PyTorch >=2.2.2. "
+            "The Qwen image entry needs its existing working CUDA PyTorch >=2.2.1. "
             "Use the image Python; torch will not be downloaded by this entry."
         )
     if args.verify_only:

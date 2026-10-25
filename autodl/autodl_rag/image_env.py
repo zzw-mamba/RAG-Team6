@@ -10,7 +10,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .bootstrap import inspect_torch, install_needed
+from .bootstrap import MIN_IMAGE_TORCH, inspect_torch, install_needed
 from .core import read_json, save_json
 
 PROJECT = Path(__file__).resolve().parent.parent
@@ -83,8 +83,8 @@ def main(argv=None):
         raise RuntimeError("Use the Qwen image's Python >=3.10")
     state = inspect_torch()
     print(json.dumps(state, ensure_ascii=False, indent=2), flush=True)
-    if install_needed(state, minimum=(2, 2, 2)):
-        raise RuntimeError("Image CUDA torch >=2.2.2 missing; no torch download attempted")
+    if install_needed(state, minimum=MIN_IMAGE_TORCH):
+        raise RuntimeError("Image CUDA torch >=2.2.1 missing; no torch download attempted")
     import torch
 
     identity = {

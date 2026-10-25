@@ -6,6 +6,7 @@ import json
 import random
 from pathlib import Path
 
+from .bootstrap import MIN_IMAGE_TORCH
 from .core import digest_file, read_json
 
 
@@ -354,8 +355,8 @@ def doctor(cfg):
 
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA unavailable; choose a PyTorch CUDA AutoDL image")
-    if Version(torch.__version__.split("+")[0]) < Version("2.2.2"):
-        raise RuntimeError("This training entry requires CUDA PyTorch >=2.2.2")
+    if Version(torch.__version__.split("+")[0]) < Version(".".join(map(str, MIN_IMAGE_TORCH))):
+        raise RuntimeError("This training entry requires CUDA PyTorch >=2.2.1")
     results = {
         "torch": torch.__version__,
         "cuda": torch.version.cuda,

@@ -9,6 +9,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -19,17 +20,19 @@ from autodl_rag.models import completion_logits_options
 
 
 class ImageEnvironmentTests(unittest.TestCase):
-    def test_reuse_mode_accepts_222_and_never_invokes_installer(self):
+    def test_reuse_mode_accepts_actual_221_image_and_never_invokes_installer(self):
         working = {
             "status": "present",
-            "version": "2.2.2+cu118",
+            "version": "2.2.1+cu118",
             "cuda_runtime": "11.8",
             "cuda_available": True,
         }
         for state, ok in (
             (working, True),
             ({"status": "missing"}, False),
-            ({**working, "version": "2.2.1+cu118"}, False),
+            ({**working, "version": "2.2.2+cu118"}, True),
+            ({**working, "version": "2.2.0+cu118"}, False),
+            ({**working, "cuda_runtime": None, "cuda_available": False}, False),
             ({**working, "cuda_available": False}, False),
         ):
             with (
@@ -43,6 +46,39 @@ class ImageEnvironmentTests(unittest.TestCase):
                     with self.assertRaises(RuntimeError):
                         bootstrap(["--reuse-image"])
                 run.assert_not_called()
+
+    def test_image_setup_accepts_221_and_verifies_inherited_torch(self):
+        fake_torch = types.SimpleNamespace(
+            __file__="/image/env/torch/__init__.py",
+            __version__="2.2.1+cu118",
+            version=types.SimpleNamespace(cuda="11.8"),
+        )
+        state = {
+            "status": "present",
+            "version": fake_torch.__version__,
+            "cuda_runtime": "11.8",
+            "cuda_available": True,
+        }
+        identity = {
+            "torch_file": fake_torch.__file__,
+            "torch_version": fake_torch.__version__,
+            "cuda": "11.8",
+        }
+        with (
+            patch("autodl_rag.image_env.inspect_torch", return_value=state),
+            patch.dict("sys.modules", {"torch": fake_torch}),
+            patch(
+                "autodl_rag.image_env.prepare_venv", return_value=Path("/project/.venv/bin/python")
+            ),
+            patch("autodl_rag.image_env.subprocess.run") as run,
+            patch(
+                "autodl_rag.image_env.subprocess.check_output", return_value=json.dumps(identity)
+            ),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            main(["--index-url", "https://mirror.test"])
+        self.assertEqual(run.call_count, 4)
+        self.assertIn("--reuse-image", run.call_args.args[0])
 
     def test_dependency_install_cannot_resolve_torch_or_cuda(self):
         commands = dependency_commands(

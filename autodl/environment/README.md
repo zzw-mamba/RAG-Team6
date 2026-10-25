@@ -95,7 +95,9 @@ AutoDL普通实例本身就是容器，不能假定其中还具备启动Docker�
 /root/Qwen2.5/text-generation-webui/models/
 ```
 
-本分支已为这个环境提供专用兼容栈：Transformers 4.45.2、PEFT 0.13.2、Accelerate 0.34.2、bitsandbytes 0.43.3、NumPy 1.26.4。训练代码支持 CUDA PyTorch >=2.2.2，并适配旧版 LLaMA 的 `num_logits_to_keep` 接口。专用入口继承镜像已有 Torch，只安装完整列出的其他依赖，使用 `--no-deps` 阻止安装器解析下载 Torch/NVIDIA 运行库；不改镜像的 WebUI 环境。
+用户实机运行日志确认镜像内实际为 **PyTorch 2.2.1+cu118**；网页标注不等于环境内版本。当前入口接受该实机版本，不会为了补丁版本差异重新下载Torch。
+
+本分支已为这个环境提供专用兼容栈：Transformers 4.45.2、PEFT 0.13.2、Accelerate 0.34.2、bitsandbytes 0.43.3、NumPy 1.26.4。训练代码支持 CUDA PyTorch >=2.2.1，并适配旧版 LLaMA 的 `num_logits_to_keep` 接口。专用入口继承镜像已有 Torch，只安装完整列出的其他依赖，使用 `--no-deps` 阻止安装器解析下载 Torch/NVIDIA 运行库；不改镜像的 WebUI 环境。
 
 ```bash
 cd /root/autodl-tmp/RAG-Team6/autodl
@@ -106,7 +108,7 @@ bash run_qwen_image.sh
 
 默认配置 `configs/autodl-qwen-image.json` 将 Qwen 路径指向镜像的 `models` 目录。该目录下须有唯一的目标 HF 模型；多模型时将配置指向具体模型目录。网页未核实实际权重格式，本入口要求完整原始 BF16/FP16 safetensors 和 tokenizer。LLaMA 权重仍从 `/root/autodl-tmp/models/Llama-3.1-8B-Instruct` 读取，数据从 `/root/autodl-tmp/data` 读取；它们需要事先放好。页面的“显存>=16G”是 Qwen 聊天示例的要求，本项目继续按用户的单卡48GB及以上配置并执行 GPU smoke。
 
-完整命令、断点恢复和路径调整见 [项目镜像使用说明](../README.md#直接使用-autodlart-qwen25-镜像pytorch-222--cuda-118)。不需要同时运行聊天 WebUI 的 `python server.py`。
+完整命令、断点恢复和路径调整见 [项目镜像使用说明](../README.md#直接使用-autodlart-qwen25-镜像pytorch-221--cuda-118)。不需要同时运行聊天 WebUI 的 `python server.py`。
 
 兼容依据：[Qwen 官方模型说明](https://huggingface.co/Qwen/Qwen2.5-7B-Instruct)、[Transformers 4.45.2 LLaMA 实现](https://github.com/huggingface/transformers/blob/v4.45.2/src/transformers/models/llama/modeling_llama.py)、[PEFT 0.13.2 依赖](https://github.com/huggingface/peft/blob/v0.13.2/setup.py)、[bitsandbytes 0.43.3 CUDA 支持](https://huggingface.co/docs/bitsandbytes/v0.43.3/installation)。
 

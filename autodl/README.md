@@ -11,7 +11,9 @@
 
 这是完整实现，包含真实模型调用、批判LoRA训练、GRPO反向传播、检查点、验证、三组对照和CSV导出。**它不包含上一份报告中的pilot12权重，也没有在你的AutoDL GPU上实际测过准确率。** 先执行下面的真实GPU smoke检查，再正式训练。不能承诺直接复现57.81%，也不预设RL一定优于普通RAG。
 
-## 直接使用 AutoDL.Art Qwen2.5 镜像（PyTorch 2.2.2 / CUDA 11.8）
+## 直接使用 AutoDL.Art Qwen2.5 镜像（PyTorch 2.2.1 / CUDA 11.8）
+
+用户实机输出为 `2.2.1+cu118`，与网页标注的2.2.2不同；项目按实机版本兼容，无需升级Torch。
 
 镜像兼容版本位于 `feat/autodl-qwen-image` 分支。已有仓库执行：
 
@@ -43,7 +45,7 @@ bash run_qwen_image.sh --from train
 IMAGE_PYTHON=/actual/image/env/bin/python bash run_qwen_image.sh
 ```
 
-项目已在真实 PyTorch 2.2.2 的 CPU 环境通过微型 Qwen/LLaMA、LoRA 梯度及断点恢复测试；7B/8B 的 GPU 量化、显存和最终效果仍需入口中的真实 smoke 验证。无需启动镜像的 `python server.py` 聊天服务。
+项目已在真实 PyTorch 2.2.1 和 2.2.2 的 CPU 环境通过微型 Qwen/LLaMA、LoRA 梯度及断点恢复测试；7B/8B 的 GPU 量化、显存和最终效果仍需入口中的真实 smoke 验证。无需启动镜像的 `python server.py` 聊天服务。
 
 ## 环境也可以打包复用
 
