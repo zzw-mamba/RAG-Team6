@@ -13,7 +13,7 @@
 
 ## 一、上传与安装
 
-推荐选择 AutoDL 的 **PyTorch 2.6或更新、Python 3.11/3.12、CUDA版**镜像，以及支持BF16的L20/L40S/A系列等显卡。项目保留镜像自带PyTorch，不自动重装CUDA。默认NF4量化两模型，并使用梯度检查点；实际峰值显存需通过smoke确认。
+推荐选择 AutoDL 的 **Python 3.11/3.12、GPU可用**环境，以及支持BF16的RTX4090/L20/L40S/A系列等显卡。安装脚本复用已有的可用CUDA PyTorch；如果没有Torch、只有CPU版或版本低于2.6，则在项目`.venv`里安装`torch==2.8.0`的CUDA12.8构建，不修改Miniconda base，也不重装系统CUDA。默认NF4量化两模型，并使用梯度检查点；实际峰值显存需通过smoke确认。
 
 在 AutoDL 终端克隆团队仓库并进入训练目录：
 
@@ -24,7 +24,24 @@ cd RAG-Team6/autodl
 bash scripts/install.sh
 ```
 
-安装脚本创建独立`.venv`，使用镜像中的PyTorch，安装锁定的Transformers/PEFT依赖，运行CPU测试，并检查CUDA、模型架构和数据第一条样本。
+安装脚本先创建独立`.venv`，再检查或安装PyTorch，随后安装锁定的Transformers/PEFT依赖，运行CPU测试，并检查CUDA、模型架构和数据第一条样本。缺少Torch不会在创建环境前直接退出；下载CUDA PyTorch可能较大，请等安装完成。
+
+### 如果Terminal提示“没有torch”
+
+终端的`python`可能是`/root/miniconda3/bin/python`，而项目使用`autodl/.venv/bin/python`。已经克隆仓库的用户先更新，再重新安装：
+
+```bash
+cd /root/autodl-tmp/RAG-Team6
+git pull --ff-only
+cd autodl
+bash scripts/install.sh
+source .venv/bin/activate
+python -c 'import sys,torch; print(sys.executable); print(torch.__version__); print(torch.cuda.is_available())'
+```
+
+最后一行应输出项目`.venv`的解释器路径及`True`。`bash scripts/install.sh`的环境激活只在脚本内部生效，所以在终端直接执行Python命令前仍需`source .venv/bin/activate`；也可以始终使用`.venv/bin/python`。
+
+默认CUDA12.8安装源对应[PyTorch官方2.8.0发布说明](https://pytorch.org/get-started/previous-versions/#v280)。其他驱动环境可通过`TORCH_INDEX_URL`选择该版本另一个官方CUDA安装源；已有CUDA构建却无法访问GPU时，脚本会明确报错，不把它当成可训练的CPU环境继续运行。
 
 确认数据目录是：
 
