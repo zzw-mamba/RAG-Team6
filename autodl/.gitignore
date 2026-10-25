@@ -1,0 +1,14 @@
+__pycache__/
+*.egg-info/
+.venv/
+.ruff_cache/
+build/
+dist/
+work/
+*.sqlite*
+*.safetensors
+*.pt
+*.bin
+*.jsonl
+*.csv
+!tests/fixtures/*

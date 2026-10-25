@@ -6,6 +6,32 @@
 
 回答模型固定为 `Qwen/Qwen2.5-7B-Instruct`，批判模型为 `meta-llama/Llama-3.1-8B-Instruct`。
 
+## AutoDL 实际训练入口
+
+单卡48GB及以上环境使用 [autodl/](autodl/README.md)，包含本地双模型加载、全局补检索、最多两轮批判修正、真实LoRA轨迹GRPO训练、检查点选择、三组对照和提交CSV导出。默认使用以下服务器路径：
+
+- Qwen：`/root/Qwen2.5`
+- LLaMA：`/root/autodl-tmp/models/Llama-3.1-8B-Instruct`
+- 数据：`/root/autodl-tmp/data`
+- 运行输出：`/root/autodl-tmp/rag-team6-work`
+
+在AutoDL的PyTorch CUDA镜像中执行，需要Python 3.11或3.12：
+
+```bash
+cd /root/autodl-tmp
+git clone https://github.com/zzw-mamba/RAG-Team6.git
+cd RAG-Team6/autodl
+bash scripts/install.sh
+bash scripts/prepare.sh
+bash scripts/smoke.sh
+bash scripts/train_pilot.sh
+bash scripts/evaluate.sh
+```
+
+默认训练64个问题组，每组4条真实轨迹，每16组保存检查点，使用tune128选模，再在独立confirmation256上比较普通RAG、原始LLaMA批判和RL批判。训练评估后，用 `bash scripts/predict.sh` 生成全量提交CSV。
+
+已完成本地25项测试，包括微型LLaMA的真实梯度、冻结参数和断点恢复测试；实际7B/8B模型的CUDA量化、显存和准确率仍需在目标GPU上验证，详见 [验证范围](autodl/VALIDATION.md)。该版本不包含历史报告中的pilot12权重。下面保留原始框架的开发、离线演示和监督训练接口说明。
+
 ## 先跑起来：无需 GPU
 
 先克隆团队仓库：
@@ -38,6 +64,7 @@ Windows 激活命令：`.venv\Scripts\Activate.ps1`。如果已经使用 Python 
 
 ```text
 rag-critic-lab/
+├── autodl/                   # 单卡48GB实际训练、评估、提交入口
 ├── src/raglab/
 │   ├── schema.py             # 公共数据、答案、批判、轨迹契约
 │   ├── data.py               # 比赛字段适配、JSON/JSONL、分组划分

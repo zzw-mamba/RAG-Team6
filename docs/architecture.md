@@ -1,5 +1,15 @@
 # 模块契约与扩展点
 
+## AutoDL 训练模块
+
+`autodl/`是独立可安装的服务器运行模块，入口为`python -m autodl_rag`，配置和完整操作见[AutoDL说明](../autodl/README.md)。原`src/raglab`接口保持原样。
+
+该模块只将问题、公开上下文及当前模型输出传给模型，标签只用于训练奖励和独立评估。全局检索库仅取训练划分的上下文，每题自带ctxs仍属于该题的公开输入。基线和批判方法共享同一初答缓存及证据。
+
+与原框架的主要区别是：批判JSON使用`action=stop/revise`；修正时允许定向补检索；候选通过Qwen顺序互换验证后接受；强化学习按最多两轮完整轨迹计算奖励。`max_rounds`配置限制批判循环次数，对应停止原因`max_revisions`，与`critic_stop`、`invalid_critique`、`invalid_revision`、`change_rejected`分别记录。已有有效终答会在批判格式失败后保留，该失败不计作正确自主停止。
+
+原框架和AutoDL模块使用不同运行目录与结果格式，不直接混合评分。AutoDL的CPU/微型模型测试不替代目标GPU的真实pilot验证。
+
 ## 数据边界
 
 `Example` 包含研究所需的 labels，但推理接口仅接收：
