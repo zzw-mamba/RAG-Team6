@@ -21,16 +21,12 @@
 cd /root/autodl-tmp
 git clone https://github.com/zzw-mamba/RAG-Team6.git
 cd RAG-Team6/autodl
-bash scripts/install.sh
-bash scripts/prepare.sh
-bash scripts/smoke.sh
-bash scripts/train_pilot.sh
-bash scripts/evaluate.sh
+bash run_all.sh
 ```
 
-默认训练64个问题组，每组4条真实轨迹，每16组保存检查点，使用tune128选模，再在独立confirmation256上比较普通RAG、原始LLaMA批判和RL批判。训练评估后，用 `bash scripts/predict.sh` 生成全量提交CSV。
+一键入口依次安装、准备数据、检查GPU、训练选模、独立评估和导出全量CSV，并逐阶段保存日志。默认训练64个问题组，每组4条真实轨迹，每16组保存检查点，使用tune128选模，再在独立confirmation256上比较普通RAG、原始LLaMA批判和RL批判。仅需训练评估时运行 `bash run_all.sh --skip-predict`；后台运行、失败续跑和参数见[一键运行说明](autodl/README.md#一键运行全部流程)。
 
-安装脚本会在项目环境中补装缺失的CUDA版PyTorch，也可复用镜像已有的可用版本。已完成AutoDL模块本地31项测试，包括微型LLaMA的真实梯度、冻结参数、断点恢复和安装环境检查；实际7B/8B模型的CUDA量化、显存和准确率仍需在目标GPU上验证，详见 [验证范围](autodl/VALIDATION.md)。该版本不包含历史报告中的pilot12权重。下面保留原始框架的开发、离线演示和监督训练接口说明。
+安装脚本会在项目环境中补装缺失的CUDA版PyTorch，也可复用镜像已有的可用版本。已完成AutoDL模块本地35项测试，包括微型LLaMA的真实梯度、冻结参数、断点恢复、安装环境检查和一键入口控制流程；实际7B/8B模型的CUDA量化、显存和准确率仍需在目标GPU上验证，详见 [验证范围](autodl/VALIDATION.md)。该版本不包含历史报告中的pilot12权重。下面保留原始框架的开发、离线演示和监督训练接口说明。
 
 ## 先跑起来：无需 GPU
 

@@ -11,6 +11,48 @@
 
 这是完整实现，包含真实模型调用、批判LoRA训练、GRPO反向传播、检查点、验证、三组对照和CSV导出。**它不包含上一份报告中的pilot12权重，也没有在你的AutoDL GPU上实际测过准确率。** 先执行下面的真实GPU smoke检查，再正式训练。不能承诺直接复现57.81%，也不预设RL一定优于普通RAG。
 
+## 一键运行全部流程
+
+已经克隆仓库后，在服务器执行：
+
+```bash
+cd /root/autodl-tmp/RAG-Team6
+git pull --ff-only
+cd autodl
+bash run_all.sh
+```
+
+总入口会依次调用 **安装依赖 → 准备数据和索引 → GPU小规模检查 → 正式训练与选模 → 独立评估和Demo → 全量测试预测及三份CSV导出**。每个阶段在终端显示进度，并保留单独日志；任意阶段失败立即停止，保留原退出码，不继续后续训练或导出。Linux的`flock`可用时会阻止此项目内重复启动一键任务。
+
+需要断开终端后继续运行时：
+
+```bash
+nohup bash run_all.sh > run_all.log 2>&1 &
+tail -f run_all.log
+```
+
+退出`tail`不会结束后台任务。详细阶段日志位于`autodl/.cache/run-all/`，运行开始时会打印本次目录。
+
+默认64个训练问题组、每组4条轨迹、每16组保存检查点，默认名称`pilot64`。完成后CSV位于`/root/autodl-tmp/rag-team6-work/test/pilot64/`，评估位于`/root/autodl-tmp/rag-team6-work/evaluation/pilot64/`。
+
+常用选项：
+
+```bash
+# 只完成训练评估，暂不运行全量测试
+bash run_all.sh --skip-predict
+
+# 环境已安装好，从数据准备开始
+bash run_all.sh --from prepare
+
+# 排除训练阶段的问题后，从训练继续；沿用已有检查点恢复规则
+bash run_all.sh --from train
+
+# 从全量预测阶段继续
+bash run_all.sh --from predict
+```
+
+仍支持`CONFIG`、`RUN_NAME`、`PILOT_GROUPS`、`SAVE_EVERY`、`RESUME`和`WARM_START`。例如`PILOT_GROUPS=16 SAVE_EVERY=4 bash run_all.sh`自动使用名称`pilot16`；如手动指定`RUN_NAME`则优先使用该值。各阶段沿用原有恢复约束，第一次检查点之前中断的训练不会被伪装成可精确恢复。原来的`bash scripts/all.sh`也会转到这个完整入口。
+
 ## 一、上传与安装
 
 推荐选择 AutoDL 的 **Python 3.11/3.12、GPU可用**环境，以及支持BF16的RTX4090/L20/L40S/A系列等显卡。安装脚本复用已有的可用CUDA PyTorch；如果没有Torch、只有CPU版或版本低于2.6，则在项目`.venv`里安装`torch==2.8.0`的CUDA12.8构建，不修改Miniconda base，也不重装系统CUDA。默认NF4量化两模型，并使用梯度检查点；实际峰值显存需通过smoke确认。
@@ -205,7 +247,7 @@ python -m autodl_rag --config configs/autodl.json export \
   --output /root/autodl-tmp/rag-team6-work/test/pilot64/rl.csv
 ```
 
-全量预测可能远慢于小规模验证。根据smoke/验证实际速度估算时间，预留CSV检查和提交时间。脚本将全量预测与训练分开，避免开始训练后自动进入长时间全量推理。
+全量预测可能远慢于小规模验证。根据smoke/验证实际速度估算时间，预留CSV检查和提交时间。可以分阶段执行；`run_all.sh`默认包含全量预测，需要先查看训练评估结果时使用`--skip-predict`。
 
 ## 六、实现说明与效果边界
 
