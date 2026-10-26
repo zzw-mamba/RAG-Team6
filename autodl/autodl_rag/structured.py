@@ -30,6 +30,46 @@ def qwen_schema(payload, allowed):
     }
 
 
+class UnicodeJsonParser:
+    """Keep LMFE's cached alphabet aligned, including split UTF-8 characters.
+
+    LMFE's free-text token cache permits Unicode, but its JSON parser can pop
+    the whole stack if that decoded character is absent from the alphabet.
+    The tokenizer alphabet only includes token-leading characters, so Unicode
+    reconstructed from multiple byte tokens must also be registered on arrival.
+    """
+
+    def __init__(self, parser):
+        self.parser = parser
+
+    @property
+    def config(self):
+        return self.parser.config
+
+    @config.setter
+    def config(self, value):
+        self.parser.config = value
+        self.parser.context.alphabet_without_quotes = value.alphabet.replace('"', "")
+
+    def add_character(self, character):
+        if ord(character) > 127 and character not in self.config.alphabet:
+            self.config.alphabet += character
+            self.parser.context.alphabet_without_quotes += character
+        return UnicodeJsonParser(self.parser.add_character(character))
+
+    def get_allowed_characters(self):
+        return self.parser.get_allowed_characters()
+
+    def can_end(self):
+        return self.parser.can_end()
+
+    def shortcut_key(self):
+        return self.parser.shortcut_key()
+
+    def cache_key(self):
+        return self.parser.cache_key()
+
+
 def json_parser(schema):
     try:
         from lmformatenforcer import CharacterLevelParserConfig, JsonSchemaParser
@@ -38,11 +78,14 @@ def json_parser(schema):
             "Qwen JSON decoder missing. Run bash scripts/install.sh in this project; "
             "it adds format-enforcer dependencies without replacing image torch."
         ) from e
-    return JsonSchemaParser(
-        schema,
-        config=CharacterLevelParserConfig(
-            force_json_field_order=True, max_consecutive_whitespaces=2
-        ),
+    return UnicodeJsonParser(
+        JsonSchemaParser(
+            schema,
+            config=CharacterLevelParserConfig(
+                force_json_field_order=True,
+                max_consecutive_whitespaces=2,
+            ),
+        )
     )
 
 
@@ -63,7 +106,8 @@ class QwenJsonGuard:
                 "No visible document IDs for Qwen JSON decoding; inspect retrieval input"
             )
         prefix = build_transformers_prefix_allowed_tokens_fn(
-            self.data, json_parser(qwen_schema(payload, allowed))
+            self.data,
+            json_parser(qwen_schema(payload, allowed)),
         )
         # TokenEnforcer 0.11.3 recreates parser config to inject its alphabet.
         # Restore our bounds after that constructor (covered by real HF generation).

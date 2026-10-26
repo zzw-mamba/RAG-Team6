@@ -4,7 +4,7 @@
 
 ## 已完成的本地验证
 
-- 本次按用户conda清单保留Torch 2.2.1、NumPy 1.26.4、PEFT 0.8.2、Accelerate 0.27.2、safetensors 0.4.3、HF Hub 0.23.3；必要的Transformers 4.45.2和tokenizers 0.20.3在项目环境覆盖旧版。该组合下65项AutoDL测试通过，包含真实微型Qwen/LLaMA前向、LoRA梯度、冻结参数和断点恢复；原框架39项通过。
+- 本次按用户conda清单保留Torch 2.2.1、NumPy 1.26.4、PEFT 0.8.2、Accelerate 0.27.2、safetensors 0.4.3、HF Hub 0.23.3；必要的Transformers 4.45.2和tokenizers 0.20.3在项目环境覆盖旧版。该组合下67项AutoDL测试通过（本地显式启用了官方Qwen分词器测试），包含真实微型Qwen/LLaMA前向、LoRA梯度、冻结参数和断点恢复；原框架39项通过。
 - 环境复用和报告测试覆盖：原镜像需补充ijson、JSON解码依赖，并需要升级Transformers/tokenizers；现有PEFT 0.13.2/Accelerate 0.34.2/bitsandbytes 0.43.3等项目包也能保留；版本超出兼容范围时明确失败；报告记录实际依赖和Torch来源；doctor在加载模型前拒绝原Transformers 4.40.2。
 - 核心依赖在本地Mac CPU实测，未在本机执行bitsandbytes 0.43.1 CUDA内核。已有2.2.2/2.8.0等环境的历史微型测试记录仍有效，不能替代实际7B/8B GPU验证。
 - 已确认completion token概率与完整因果前向一致，温度一致；LoRA获得非零梯度并发生变化；基座参数保持不变。
@@ -34,6 +34,12 @@
 - 受约束解码固定lm-format-enforcer0.11.3，回归覆盖其构造器重置字段顺序配置的问题；无可见文档时明确报错，不借助空列表伪造引用。批判模型不施加该解码约束，不改变其RL采样与概率计算。
 - 当前30项兼容依赖已通过Linux x86_64/Python3.11二进制包pip dry-run；这只是安装包可用性及元数据验证，不是服务器CUDA安装或7B模型测试。旧的25包记录对应此前版本。
 - 提示词版本为autodl-v3-bounded-json。尚未在真实7B模型上验证用户的失败题；提供probe-answer入口先检查该题，随后归档旧预测并重新评估已有权重。结构化解码不能保证答案正确。
+
+- 已用Qwen官方tokenizer.json复现09eef02的Unicode提前EOS：合成答案以Ł、Ž、中文或emoji开头时，旧解析器在JSON未闭合时允许EOS。原因是TokenEnforcer重设config.alphabet，但JsonSchemaParser.context.alphabet_without_quotes仍为构造时的ASCII缓存。
+- 修复使用项目内UnicodeJsonParser适配器同步缓存，并注册多字节token重建的Unicode字符；没有修改第三方安装文件、删除重音字符或写入题目答案。合成字节级分词器额外覆盖了不直接存在于token字符表中的emoji。每个未完成输出前缀都断言EOS不可选，完整JSON后才允许EOS。
+- 本轮在PyTorch2.2.1/Transformers4.45.2/PEFT0.8.2与PyTorch2.8.0/Transformers4.56.2两套Mac CPU环境均通过67项AutoDL测试，原框架39项通过。67项包含1项需要本地官方分词器的可选测试；常规安装未设置路径时该项明确跳过，其余66项运行。Ruff通过。
+- 官方分词器来源：[Qwen2.5-7B-Instruct/tokenizer.json](https://huggingface.co/Qwen/Qwen2.5-7B-Instruct/blob/main/tokenizer.json)，本地文件SHA256为c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539。仅下载分词器，未下载模型权重或比赛答案；本次验证仍不等于实际7B推理或准确率验证。
+- 可在autodl目录通过 `QWEN_TOKENIZER_JSON=/absolute/path/to/tokenizer.json .venv/bin/python -m unittest discover -s tests -p test_structured.py -v` 运行官方分词器回归。测试本身不联网、不自动下载文件。服务器仍应先运行probe-answer检查train:45111，再恢复评估。
 
 ## 验证含义
 

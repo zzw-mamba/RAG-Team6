@@ -145,6 +145,28 @@ tail -f run_background.log
 
 先确认没有另一份任务仍在运行。退出日志查看或断开终端不会结束后台任务；服务器实例须保持开机。沿用原 `CONFIG`/`RUN_NAME`。已有完整训练summary时不重训；由于本次推理版本变化，原41题等旧预测会归档，从第1题重新评估，避免混用两个版本的结果。
 
+## Unicode姓名开头、6个token就EOS的修复
+
+如果日志显示 `structured_json=true`、`finish_reason=eos`、`completion_tokens=6`，原始输出只有 `{"answer":"Ł`，这是已复现的Unicode解析问题，与token预算无关。lm-format-enforcer 0.11.3构造器替换字符表后，JSON解析器仍缓存默认ASCII字符表；非ASCII首字符可能使解析栈被误清空，从而提前允许EOS。修复同步字符表缓存，并处理多个UTF-8字节token拼成的Unicode字符，保留原姓名字符。补充的字节级分词测试覆盖Ł、Ž、中文和emoji；官方Qwen分词器的同类路径也已在CPU验证。
+
+从已安装09eef02的环境更新本修复，不增加依赖，不需要重新安装Torch或训练模型。先更新分支，再在 `autodl/` 检查本次confirmation失败题：
+
+```bash
+.venv/bin/python -m autodl_rag --config configs/autodl-qwen-image.json \
+  probe-answer --split confirmation --id train:45111 \
+  --output /root/autodl-tmp/rag-team6-work/diagnostics/probe-45111.json
+```
+
+单题通过后，后台恢复独立评估及后续阶段：
+
+```bash
+nohup bash run_qwen_image.sh --from evaluate > run_background.log 2>&1 < /dev/null &
+echo $! > run_background.pid
+tail -f run_background.log
+```
+
+这会沿用已有选中的adapter。实现版本更新会归档旧的confirmation预测并从第1题重算。若要用新代码重新比较所有检查点、重新选模，将 `--from evaluate` 改为 `--from train`；存在完整训练summary时仍跳过优化器训练。
+
 ## 一、通用 CUDA 镜像的上传与安装
 
 此节对应 `RAG_ENV_PROFILE=modern`；使用上方 Qwen 镜像专用入口时不执行这里的 Torch 升级。通用环境推荐选择 AutoDL 的 **Python 3.11/3.12、GPU可用**环境，以及支持BF16的RTX4090/L20/L40S/A系列等显卡。安装脚本复用已有的可用CUDA PyTorch；如果没有Torch、只有CPU版或版本低于2.6，则在项目`.venv`里安装`torch==2.8.0`的CUDA12.8构建，不修改Miniconda base，也不重装系统CUDA。默认NF4量化两模型，并使用梯度检查点；实际峰值显存需通过smoke确认。
