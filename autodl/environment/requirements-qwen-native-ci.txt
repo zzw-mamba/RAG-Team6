@@ -1,0 +1,9 @@
+# Reproduce the user's retained libraries in CI. Torch is installed separately.
+-r requirements-qwen-image.txt
+numpy==1.26.4
+peft==0.8.2
+accelerate==0.27.2
+bitsandbytes==0.43.1
+safetensors==0.4.3
+huggingface-hub==0.23.3
+tqdm==4.66.4

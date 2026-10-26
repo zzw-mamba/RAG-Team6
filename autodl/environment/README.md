@@ -6,7 +6,7 @@
 
 ## 1. 对当前AutoDL：准备一次离线包，之后复用
 
-当前报错的服务器是Linux x86_64、Python3.10。请在**相同Python主/次版本的Linux x86_64**机器上准备包；该机器无需GPU，但网络要能完成一次下载。不要直接在macOS上下载一套包拿去Linux安装。
+最新实际镜像环境为Linux x86_64、Python3.11.9；先前Miniconda base的Python3.10是另一个解释器。请在**相同Python主/次版本的Linux x86_64**机器上准备包；该机器无需GPU，但网络要能完成一次下载。不要直接在macOS上下载一套包拿去Linux安装。
 
 网络正常的Linux机器执行：
 
@@ -30,16 +30,16 @@ DEPENDENCY_INDEX_URL=https://pypi.org/simple bash scripts/download_env.sh
 将整个目录打包搬到AutoDL：
 
 ```bash
-tar -cf rag-env-linux-py310.tar -C .cache wheelhouse
+tar -cf rag-env-linux-py311.tar -C .cache wheelhouse
 ```
 
 在AutoDL将它解压到`/root/autodl-tmp/rag-env/`，然后执行：
 
 ```bash
 mkdir -p /root/autodl-tmp/rag-env
-tar -xf /path/to/rag-env-linux-py310.tar -C /root/autodl-tmp/rag-env
+tar -xf /path/to/rag-env-linux-py311.tar -C /root/autodl-tmp/rag-env
 cd /root/autodl-tmp/RAG-Team6/autodl
-WHEELHOUSE=/root/autodl-tmp/rag-env/wheelhouse bash run_all.sh
+RAG_ENV_PROFILE=modern WHEELHOUSE=/root/autodl-tmp/rag-env/wheelhouse bash run_all.sh
 ```
 
 安装阶段通过`--no-index --find-links`只读取本地依赖，不访问包索引；不继承Miniconda base中的无关包。之后继续GPU检查、训练和评估。离线包**不包含Python解释器、系统驱动或模型**；目标机器仍需相同Python主/次版本和可用NVIDIA驱动。Python3.11/3.12服务器需分别在对应版本的Linux机器准备依赖包。
@@ -48,7 +48,7 @@ WHEELHOUSE=/root/autodl-tmp/rag-env/wheelhouse bash run_all.sh
 
 ```bash
 bash scripts/download_env.sh
-WHEELHOUSE="$PWD/.cache/wheelhouse" bash run_all.sh
+RAG_ENV_PROFILE=modern WHEELHOUSE="$PWD/.cache/wheelhouse" bash run_all.sh
 ```
 
 下载和安装验证成功后，可以用AutoDL平台的保存镜像功能复用已经安装的环境，避免下一台实例重新安装。实际可用镜像选项以平台控制台为准。
@@ -97,7 +97,7 @@ AutoDL普通实例本身就是容器，不能假定其中还具备启动Docker�
 
 用户实机运行日志确认镜像内实际为 **PyTorch 2.2.1+cu118**；网页标注不等于环境内版本。当前入口接受该实机版本，不会为了补丁版本差异重新下载Torch。
 
-本分支已为这个环境提供专用兼容栈：Transformers 4.45.2、PEFT 0.13.2、Accelerate 0.34.2、bitsandbytes 0.43.3、NumPy 1.26.4。训练代码支持 CUDA PyTorch >=2.2.1，并适配旧版 LLaMA 的 `num_logits_to_keep` 接口。专用入口继承镜像已有 Torch，只安装完整列出的其他依赖，使用 `--no-deps` 阻止安装器解析下载 Torch/NVIDIA 运行库；不改镜像的 WebUI 环境。
+本分支按实际conda清单复用Python3.11.9、Torch2.2.1+cu118、NumPy1.26.4、PEFT0.8.2、Accelerate0.27.2、bitsandbytes0.43.1、safetensors0.4.3和HF Hub0.23.3。只在项目环境把Transformers升级到4.45.2、tokenizers升级到0.20.3，并补充ijson3.4.0。Transformers4.40.2对LLaMA 3.1的RoPE字段会报错，这是必要升级；不修改模型的RoPE语义来迁就旧库。兼容范围内的先前项目依赖也会保留，不逐项强制升级/降级。训练代码支持 CUDA PyTorch >=2.2.1，并适配旧版 LLaMA 的 `num_logits_to_keep` 接口。专用入口继承镜像已有 Torch，只安装完整列出的其他依赖，使用 `--no-deps` 阻止安装器解析下载 Torch/NVIDIA 运行库；不改镜像的 WebUI 环境。实际生效的Python、Torch路径、25个项目依赖及其版本会写入 `.cache/image-environment.json`，运行前再次检查兼容范围。
 
 ```bash
 cd /root/autodl-tmp/RAG-Team6/autodl
@@ -110,7 +110,7 @@ bash run_qwen_image.sh
 
 完整命令、断点恢复和路径调整见 [项目镜像使用说明](../README.md#直接使用-autodlart-qwen25-镜像pytorch-221--cuda-118)。不需要同时运行聊天 WebUI 的 `python server.py`。
 
-兼容依据：[Qwen 官方模型说明](https://huggingface.co/Qwen/Qwen2.5-7B-Instruct)、[Transformers 4.45.2 LLaMA 实现](https://github.com/huggingface/transformers/blob/v4.45.2/src/transformers/models/llama/modeling_llama.py)、[PEFT 0.13.2 依赖](https://github.com/huggingface/peft/blob/v0.13.2/setup.py)、[bitsandbytes 0.43.3 CUDA 支持](https://huggingface.co/docs/bitsandbytes/v0.43.3/installation)。
+兼容依据：[Qwen 官方模型说明](https://huggingface.co/Qwen/Qwen2.5-7B-Instruct)、[Transformers 4.45.2 LLaMA 实现](https://github.com/huggingface/transformers/blob/v4.45.2/src/transformers/models/llama/modeling_llama.py)、[PEFT 0.8.2 依赖](https://github.com/huggingface/peft/blob/v0.8.2/setup.py)、[旧Transformers的RoPE限制](https://github.com/huggingface/transformers/blob/v4.40.2/src/transformers/models/llama/configuration_llama.py)、[bitsandbytes 0.43.3 CUDA 支持](https://huggingface.co/docs/bitsandbytes/v0.43.3/installation)。
 
 ## 4. 复现范围
 

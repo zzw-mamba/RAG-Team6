@@ -366,6 +366,11 @@ def doctor(cfg):
     }
     for name in ("transformers", "peft", "accelerate", "bitsandbytes", "ijson"):
         results["packages"][name] = importlib.metadata.version(name)
+    if Version(results["packages"]["transformers"]) < Version("4.45.2"):
+        raise RuntimeError(
+            "This LLaMA 3.1 training entry needs Transformers >=4.45.2 for its RoPE and "
+            "completion-logit interfaces. Run scripts/install.sh; torch need not be replaced."
+        )
     for i in range(torch.cuda.device_count()):
         p = torch.cuda.get_device_properties(i)
         results["gpus"].append(

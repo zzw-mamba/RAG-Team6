@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import importlib.util
 import io
 import json
 import os
@@ -15,8 +16,44 @@ from pathlib import Path
 from unittest.mock import patch
 
 from autodl_rag.bootstrap import main as bootstrap
-from autodl_rag.image_env import dependency_commands, main, prepare_venv
-from autodl_rag.models import completion_logits_options
+from autodl_rag.image_env import (
+    dependency_commands,
+    main,
+    prepare_venv,
+    runtime_report,
+    validate_packages,
+)
+from autodl_rag.models import completion_logits_options, doctor
+
+HAS_PACKAGING = importlib.util.find_spec("packaging") is not None
+
+# Relevant versions from the user's conda list; no paths, credentials or data.
+IMAGE_PACKAGES = {
+    "numpy": "1.26.4",
+    "transformers": "4.40.2",
+    "tokenizers": "0.19.1",
+    "peft": "0.8.2",
+    "accelerate": "0.27.2",
+    "bitsandbytes": "0.43.1",
+    "safetensors": "0.4.3",
+    "sentencepiece": "0.2.0",
+    "tqdm": "4.66.4",
+    "huggingface-hub": "0.23.3",
+    "packaging": "24.0",
+    "psutil": "5.9.8",
+    "PyYAML": "6.0.1",
+    "filelock": "3.13.1",
+    "fsspec": "2024.2.0",
+    "regex": "2024.5.15",
+    "requests": "2.32.3",
+    "charset-normalizer": "3.3.2",
+    "idna": "3.7",
+    "urllib3": "2.2.1",
+    "certifi": "2024.6.2",
+    "typing-extensions": "4.9.0",
+    "setuptools": "69.5.1",
+    "wheel": "0.43.0",
+}
 
 
 class ImageEnvironmentTests(unittest.TestCase):
@@ -63,6 +100,12 @@ class ImageEnvironmentTests(unittest.TestCase):
             "torch_file": fake_torch.__file__,
             "torch_version": fake_torch.__version__,
             "cuda": "11.8",
+            "packages": {
+                **IMAGE_PACKAGES,
+                "transformers": "4.45.2",
+                "tokenizers": "0.20.3",
+                "ijson": "3.4.0",
+            },
         }
         with (
             patch("autodl_rag.image_env.inspect_torch", return_value=state),
@@ -71,6 +114,8 @@ class ImageEnvironmentTests(unittest.TestCase):
                 "autodl_rag.image_env.prepare_venv", return_value=Path("/project/.venv/bin/python")
             ),
             patch("autodl_rag.image_env.subprocess.run") as run,
+            patch("autodl_rag.image_env.validate_packages"),
+            patch("autodl_rag.image_env.save_json") as save,
             patch(
                 "autodl_rag.image_env.subprocess.check_output", return_value=json.dumps(identity)
             ),
@@ -79,6 +124,7 @@ class ImageEnvironmentTests(unittest.TestCase):
             main(["--index-url", "https://mirror.test"])
         self.assertEqual(run.call_count, 4)
         self.assertIn("--reuse-image", run.call_args.args[0])
+        self.assertEqual(save.call_args.args[0].name, "image-environment.json")
 
     def test_dependency_install_cannot_resolve_torch_or_cuda(self):
         commands = dependency_commands(
@@ -88,14 +134,92 @@ class ImageEnvironmentTests(unittest.TestCase):
             self.assertIn("--no-deps", command)
             self.assertEqual(command[:3], ["/project/.venv/bin/python", "-m", "pip"])
         self.assertIn("--no-index", commands[-1])
+        self.assertNotIn("--upgrade", commands[1])
         requirements = Path(__file__).parents[1] / "environment/requirements-qwen-image.txt"
         names = [
-            line.split("==")[0].lower()
+            line.split("==")[0].split(">=")[0].lower()
             for line in requirements.read_text().splitlines()
             if line and not line.startswith("#")
         ]
         self.assertFalse(any(name == "torch" or name.startswith("nvidia-") for name in names))
         self.assertIn("numpy", names)
+
+    @unittest.skipUnless(HAS_PACKAGING, "Package version checks need optional packaging")
+    def test_native_image_needs_only_transformers_tokenizers_and_ijson(self):
+        with self.assertRaises(RuntimeError) as failure:
+            validate_packages(IMAGE_PACKAGES)
+        self.assertIn("transformers", str(failure.exception))
+        self.assertIn("tokenizers", str(failure.exception))
+        self.assertIn("ijson", str(failure.exception))
+        selected = {
+            **IMAGE_PACKAGES,
+            "transformers": "4.45.2",
+            "tokenizers": "0.20.3",
+            "ijson": "3.4.0",
+        }
+        validate_packages(selected)
+        for name in ("peft", "accelerate", "bitsandbytes", "numpy", "huggingface-hub"):
+            self.assertEqual(selected[name], IMAGE_PACKAGES[name])
+
+    @unittest.skipUnless(HAS_PACKAGING, "Package version checks need optional packaging")
+    def test_previous_project_versions_can_be_kept_without_downgrading(self):
+        selected = {
+            **IMAGE_PACKAGES,
+            "transformers": "4.45.2",
+            "tokenizers": "0.20.3",
+            "ijson": "3.4.0",
+            "peft": "0.13.2",
+            "accelerate": "0.34.2",
+            "bitsandbytes": "0.43.3",
+            "huggingface-hub": "0.25.2",
+            "safetensors": "0.4.5",
+            "tqdm": "4.67.1",
+        }
+        validate_packages(selected)
+        selected["numpy"] = "2.0.0"
+        with self.assertRaisesRegex(RuntimeError, "numpy"):
+            validate_packages(selected)
+
+    @unittest.skipUnless(HAS_PACKAGING, "Package version checks need optional packaging")
+    def test_effective_version_report_preserves_native_library_versions(self):
+        versions = {
+            **IMAGE_PACKAGES,
+            "transformers": "4.45.2",
+            "tokenizers": "0.20.3",
+            "ijson": "3.4.0",
+        }
+        fake_torch = types.SimpleNamespace(
+            __file__="/image/torch/__init__.py",
+            __version__="2.2.1+cu118",
+            version=types.SimpleNamespace(cuda="11.8"),
+        )
+        with (
+            patch.dict("sys.modules", {"torch": fake_torch}),
+            patch(
+                "autodl_rag.image_env.importlib.metadata.version", side_effect=versions.__getitem__
+            ),
+        ):
+            report = runtime_report()
+        self.assertEqual(report["packages"]["peft"], "0.8.2")
+        self.assertEqual(report["packages"]["bitsandbytes"], "0.43.1")
+        self.assertEqual(report["torch_version"], "2.2.1+cu118")
+        self.assertEqual(report["attention_implementation"], "sdpa")
+        self.assertEqual(len(report["requirements_sha256"]), 64)
+
+    @unittest.skipUnless(HAS_PACKAGING, "Version checks need optional packaging")
+    def test_doctor_rejects_original_transformers_before_loading_llama31(self):
+        fake_torch = types.SimpleNamespace(
+            __version__="2.2.1+cu118",
+            version=types.SimpleNamespace(cuda="11.8"),
+            cuda=types.SimpleNamespace(is_available=lambda: True),
+        )
+        versions = {**IMAGE_PACKAGES, "ijson": "3.4.0"}
+        with (
+            patch.dict("sys.modules", {"torch": fake_torch}),
+            patch("importlib.metadata.version", side_effect=versions.__getitem__),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "Transformers >=4.45.2"):
+                doctor({})
 
     def test_missing_image_torch_fails_before_creating_or_installing(self):
         with (

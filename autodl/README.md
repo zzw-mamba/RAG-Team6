@@ -26,9 +26,9 @@ cd autodl
 bash run_qwen_image.sh
 ```
 
-专用入口自动使用镜像的 `/root/Qwen2.5/text-generation-webui/installer_files/env/bin/python`，无需手动激活 Conda。它创建继承镜像 Torch 的项目 `.venv`；旧项目环境先重命名备份为 `.venv.backup-*`。安装前检查镜像 Torch/CUDA 可用性，**不会安装或升级 Torch，也不会解析下载 NVIDIA CUDA 依赖**。首次仍需安装固定版本的项目依赖（其中 bitsandbytes 有一定体积），默认使用清华 PyPI 镜像；网络失败会停止，重跑同一入口即可。
+专用入口自动使用镜像的 `/root/Qwen2.5/text-generation-webui/installer_files/env/bin/python`，无需手动激活 Conda。它创建继承镜像 Torch 的项目 `.venv`；旧项目环境先重命名备份为 `.venv.backup-*`。安装前检查镜像 Torch/CUDA 可用性，**不会安装或升级 Torch，也不会解析下载 NVIDIA CUDA 依赖**。首次按兼容范围补充缺失或不兼容的项目依赖，已满足要求的包直接复用，默认使用清华 PyPI 镜像；网络失败会停止，重跑同一入口即可。
 
-兼容栈固定为 Transformers 4.45.2、PEFT 0.13.2、Accelerate 0.34.2、bitsandbytes 0.43.3、NumPy 1.26.4，详见 [依赖清单](environment/requirements-qwen-image.txt)。这些包只安装在项目 `.venv`，镜像的聊天 WebUI 环境保持独立。训练概率计算适配旧版 `num_logits_to_keep` 接口，保留 LoRA/GRPO、冻结回答模型和检查点恢复流程。
+已按你2026-10-26提供的实际环境适配：Python **3.11.9**、Torch **2.2.1+cu118**、NumPy **1.26.4**、PEFT **0.8.2**、Accelerate **0.27.2**、bitsandbytes **0.43.1**、safetensors **0.4.3**、Hugging Face Hub **0.23.3**均可复用。必要调整只有将项目使用的 Transformers **4.40.2 → 4.45.2**、tokenizers **0.19.1 → 0.20.3**，并补充缺失的 ijson **3.4.0**；pip工具会按安装入口的要求更新。Transformers 4.40.2不接受LLaMA 3.1的RoPE配置，因此不能原样保留该版本。已安装的PEFT 0.13.2/Accelerate 0.34.2/bitsandbytes 0.43.3等上个版本的项目依赖也可以继续用，不强制降级。详见 [依赖范围](environment/requirements-qwen-image.txt)。补充包只安装在项目 `.venv`，不修改镜像原Conda环境。安装后校验实际生效版本，保存至 `autodl/.cache/image-environment.json`（记录Python、Torch来源、全部依赖版本和依赖要求的校验值）。默认使用SDPA，不需要重新编译或升级镜像自带的FlashAttention、AutoGPTQ、AWQ等WebUI扩展。训练概率计算适配旧版 `num_logits_to_keep` 接口，保留 LoRA/GRPO、冻结回答模型和检查点恢复流程。
 
 使用 [configs/autodl-qwen-image.json](configs/autodl-qwen-image.json)：Qwen 路径为 `/root/Qwen2.5/text-generation-webui/models`；LLaMA、数据、输出仍使用上表路径。Qwen 的 models 下须有唯一的 7B Instruct HF 模型目录；有多个时请复制配置，将 `qwen_path` 指向具体目录，再通过 `CONFIG=/absolute/path/config.json bash run_qwen_image.sh` 启动。两个模型都需要原始 HF **safetensors** 权重和 tokenizer，不能把 GGUF/AWQ/GPTQ 文件直接交给此 NF4 训练入口。镜像页面没有说明自带 LLaMA，需要保留你已准备的 LLaMA 权重。
 
@@ -49,11 +49,11 @@ IMAGE_PYTHON=/actual/image/env/bin/python bash run_qwen_image.sh
 
 ## 环境也可以打包复用
 
-本项目训练需要PyTorch，但不必每台机器都重新联网安装。已提供[环境打包说明](environment/README.md)、`Dockerfile`和离线依赖包工具。当前AutoDL是Linux x86_64、Python3.10，离线包应在同系统架构、同Python主/次版本机器准备一次：
+本项目训练需要PyTorch，但不必每台机器都重新联网安装。已提供[环境打包说明](environment/README.md)、`Dockerfile`和离线依赖包工具。当前镜像是Linux x86_64、Python3.11.9，离线包应在同系统架构、同Python主/次版本机器准备一次：
 
 ```bash
 bash scripts/download_env.sh
-WHEELHOUSE="$PWD/.cache/wheelhouse" bash run_all.sh
+RAG_ENV_PROFILE=modern WHEELHOUSE="$PWD/.cache/wheelhouse" bash run_all.sh
 ```
 
 第一步仍需下载一次；可在网络正常的另一台Linux机器准备好，再把整个wheelhouse搬过来。第二步使用校验后的本地文件离线安装。下载将Torch本体与NVIDIA依赖分源处理，并增加重试；已经完成的wheel保留复用。仓库提供打包工具，不内置数GB依赖或已构建镜像。Docker方案用于有Docker管理权限的主机，不假定AutoDL容器内还能启动Docker。
