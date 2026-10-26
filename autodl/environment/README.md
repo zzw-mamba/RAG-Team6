@@ -97,7 +97,7 @@ AutoDL普通实例本身就是容器，不能假定其中还具备启动Docker�
 
 用户实机运行日志确认镜像内实际为 **PyTorch 2.2.1+cu118**；网页标注不等于环境内版本。当前入口接受该实机版本，不会为了补丁版本差异重新下载Torch。
 
-本分支按实际conda清单复用Python3.11.9、Torch2.2.1+cu118、NumPy1.26.4、PEFT0.8.2、Accelerate0.27.2、bitsandbytes0.43.1、safetensors0.4.3和HF Hub0.23.3。只在项目环境把Transformers升级到4.45.2、tokenizers升级到0.20.3，并补充ijson3.4.0。Transformers4.40.2对LLaMA 3.1的RoPE字段会报错，这是必要升级；不修改模型的RoPE语义来迁就旧库。兼容范围内的先前项目依赖也会保留，不逐项强制升级/降级。训练代码支持 CUDA PyTorch >=2.2.1，并适配旧版 LLaMA 的 `num_logits_to_keep` 接口。专用入口继承镜像已有 Torch，只安装完整列出的其他依赖，使用 `--no-deps` 阻止安装器解析下载 Torch/NVIDIA 运行库；不改镜像的 WebUI 环境。实际生效的Python、Torch路径、25个项目依赖及其版本会写入 `.cache/image-environment.json`，运行前再次检查兼容范围。
+本分支按实际conda清单复用Python3.11.9、Torch2.2.1+cu118、NumPy1.26.4、PEFT0.8.2、Accelerate0.27.2、bitsandbytes0.43.1、safetensors0.4.3和HF Hub0.23.3。只在项目环境把Transformers升级到4.45.2、tokenizers升级到0.20.3，并补充ijson3.4.0。当前JSON解码另需lm-format-enforcer0.11.3和interegular0.3.3，复用镜像已有pydantic2.7.3/pydantic-core2.18.4/annotated-types0.7.0；新版本更新后需再执行安装入口。Transformers4.40.2对LLaMA 3.1的RoPE字段会报错，这是必要升级；不修改模型的RoPE语义来迁就旧库。兼容范围内的先前项目依赖也会保留，不逐项强制升级/降级。训练代码支持 CUDA PyTorch >=2.2.1，并适配旧版 LLaMA 的 `num_logits_to_keep` 接口。专用入口继承镜像已有 Torch，只安装完整列出的其他依赖，使用 `--no-deps` 阻止安装器解析下载 Torch/NVIDIA 运行库；不改镜像的 WebUI 环境。实际生效的Python、Torch路径、30个项目依赖及其版本会写入 `.cache/image-environment.json`，运行前再次检查兼容范围。
 
 ```bash
 cd /root/autodl-tmp/RAG-Team6/autodl

@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 from autodl_rag.core import InvalidOutput, read_json, records
 from autodl_rag.data import prepare, prepared
-from autodl_rag.experiment import run_dataset
+from autodl_rag.experiment import probe_answer, run_dataset
 from autodl_rag.models import LocalModel
 from autodl_rag.pipeline import Pipeline
 from test_system import configuration
@@ -21,9 +21,11 @@ class ReplySequence:
     def __init__(self, replies):
         self.replies = iter(replies)
         self.requests = []
+        self.budgets = []
 
-    def generate(self, system, payload):
+    def generate(self, system, payload, max_new_tokens=None):
         self.requests.append(copy.deepcopy(payload))
+        self.budgets.append(max_new_tokens)
         return {
             "raw": next(self.replies),
             "allowed": {d["id"] for d in payload["documents"]},
@@ -79,6 +81,19 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(len(log["attempts"]), 3)
         self.assertEqual(log["attempts"][0]["raw"], '{"evidence_ids":["invented"]}')
         self.assertNotIn("answers", log)
+
+    def test_incomplete_json_retries_increase_budget_instead_of_repeating_same_limit(self):
+        truncated = '{"answer":"Synthetic", "explanation":"' + "repeating ancestor " * 100
+        good = json.dumps(
+            {"answer": "unknown", "evidence_ids": [], "explanation": "Missing second hop."}
+        )
+        p = self.answer_pipeline([truncated, truncated, good])
+        answer, _, retries, _ = p.answer(
+            {"question": "Synthetic?", "documents": [{"id": "d", "text": "fixture"}]}
+        )
+        self.assertEqual(answer["answer"], "unknown")
+        self.assertEqual(retries, 2)
+        self.assertEqual(p.qwen.budgets, [384, 768, 1536])
 
     def test_budgeted_citation_list_contains_only_remaining_documents(self):
         class Tokenizer:
@@ -185,6 +200,30 @@ class RecoveryTests(unittest.TestCase):
         result = run_dataset(cfg, "tune", "rag", output, limit=1, resume=True, pipeline=Valid())
         self.assertEqual(result["rows"], 1)
         self.assertEqual(next(iter(records(output)))["id"], first["id"])
+
+    def test_single_question_probe_passes_only_public_fields(self):
+        cfg = configuration(self.root)
+        prepare(cfg)
+        row = next(iter(records(prepared(cfg) / "tune.jsonl")))
+        case = self
+
+        class Probe:
+            def initial(self, public_row):
+                case.assertEqual(set(public_row), {"id", "question", "ctxs"})
+                return {
+                    "answer": {
+                        "answer": "unknown",
+                        "explanation": "Synthetic missing hop",
+                        "evidence_ids": [],
+                    },
+                    "raw": "synthetic fixture",
+                    "format_retries": 0,
+                }, False
+
+        output = self.root / "probe.json"
+        result = probe_answer(cfg, "tune", row["id"], output, pipeline=Probe())
+        self.assertEqual(result["id"], row["id"])
+        self.assertNotIn("SECRET_GOLD", output.read_text())
 
 
 if __name__ == "__main__":

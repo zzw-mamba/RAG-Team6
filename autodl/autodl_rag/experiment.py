@@ -209,6 +209,30 @@ def run_dataset(
     return result
 
 
+def probe_answer(cfg, split, sample_id, output, pipeline=None):
+    if split not in ("tune", "confirmation", "test"):
+        raise ValueError("Invalid probe split")
+    row = next(
+        (public(r) for r in records(prepared(cfg) / f"{split}.jsonl") if r["id"] == sample_id),
+        None,
+    )
+    if row is None:
+        raise ValueError(f"Sample {sample_id} is not in {split}")
+    pipeline = pipeline or Pipeline(cfg, mode="rag")
+    initial, cached = pipeline.initial(row)
+    result = {
+        "id": row["id"],
+        "question": row["question"],
+        "answer": initial["answer"],
+        "raw": initial["raw"],
+        "format_retries": initial["format_retries"],
+        "cache_hit": cached,
+        "purpose": "Single-sample generation check; no gold labels or accuracy",
+    }
+    save_json(output, result)
+    return result
+
+
 def evaluate(cfg, predictions, split):
     if split not in ("tune", "confirmation"):
         raise ValueError("No labels for test; do not generate test accuracy")

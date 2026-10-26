@@ -102,7 +102,7 @@ class FakeQwen:
     def __init__(self, candidate="Harbor City", invalid=False):
         self.candidate, self.invalid = candidate, invalid
 
-    def generate(self, system, payload, sample=False):
+    def generate(self, system, payload, sample=False, max_new_tokens=None):
         # Assert the entire model payload never carries label/annotation fields.
         text = json.dumps(payload)
         if any(

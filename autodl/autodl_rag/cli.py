@@ -23,6 +23,10 @@ def main():
         help="Stream JSON, exclude test overlap and create disjoint grouped splits",
     )
     sub.add_parser("index", help="Build a training-context-only SQLite FTS5 corpus")
+    probe = sub.add_parser("probe-answer", help="Check one public question with Qwen only; no labels or accuracy")
+    probe.add_argument("--split", choices=["tune", "confirmation", "test"], required=True)
+    probe.add_argument("--id", required=True)
+    probe.add_argument("--output", required=True)
     run = sub.add_parser(
         "run", help="Run a baseline or trained critic with full trajectories"
     )
@@ -99,6 +103,10 @@ def main():
         from .retrieval import build_index
 
         result = build_index(cfg)
+    elif args.command == "probe-answer":
+        from .experiment import probe_answer
+
+        result = probe_answer(cfg, args.split, args.id, args.output)
     elif args.command == "train":
         from .training import train
 

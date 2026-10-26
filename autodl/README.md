@@ -28,7 +28,7 @@ bash run_qwen_image.sh
 
 专用入口自动使用镜像的 `/root/Qwen2.5/text-generation-webui/installer_files/env/bin/python`，无需手动激活 Conda。它创建继承镜像 Torch 的项目 `.venv`；旧项目环境先重命名备份为 `.venv.backup-*`。安装前检查镜像 Torch/CUDA 可用性，**不会安装或升级 Torch，也不会解析下载 NVIDIA CUDA 依赖**。首次按兼容范围补充缺失或不兼容的项目依赖，已满足要求的包直接复用，默认使用清华 PyPI 镜像；网络失败会停止，重跑同一入口即可。
 
-已按你2026-10-26提供的实际环境适配：Python **3.11.9**、Torch **2.2.1+cu118**、NumPy **1.26.4**、PEFT **0.8.2**、Accelerate **0.27.2**、bitsandbytes **0.43.1**、safetensors **0.4.3**、Hugging Face Hub **0.23.3**均可复用。必要调整只有将项目使用的 Transformers **4.40.2 → 4.45.2**、tokenizers **0.19.1 → 0.20.3**，并补充缺失的 ijson **3.4.0**；pip工具会按安装入口的要求更新。Transformers 4.40.2不接受LLaMA 3.1的RoPE配置，因此不能原样保留该版本。已安装的PEFT 0.13.2/Accelerate 0.34.2/bitsandbytes 0.43.3等上个版本的项目依赖也可以继续用，不强制降级。详见 [依赖范围](environment/requirements-qwen-image.txt)。补充包只安装在项目 `.venv`，不修改镜像原Conda环境。安装后校验实际生效版本，保存至 `autodl/.cache/image-environment.json`（记录Python、Torch来源、全部依赖版本和依赖要求的校验值）。默认使用SDPA，不需要重新编译或升级镜像自带的FlashAttention、AutoGPTQ、AWQ等WebUI扩展。训练概率计算适配旧版 `num_logits_to_keep` 接口，保留 LoRA/GRPO、冻结回答模型和检查点恢复流程。
+已按你2026-10-26提供的实际环境适配：Python **3.11.9**、Torch **2.2.1+cu118**、NumPy **1.26.4**、PEFT **0.8.2**、Accelerate **0.27.2**、bitsandbytes **0.43.1**、safetensors **0.4.3**、Hugging Face Hub **0.23.3**均可复用。必要调整包括将项目使用的 Transformers **4.40.2 → 4.45.2**、tokenizers **0.19.1 → 0.20.3**，并补充缺失的 ijson **3.4.0**。JSON解码还需要 lm-format-enforcer **0.11.3** 和 interegular **0.3.3**，复用镜像已有的 pydantic **2.7.3**、pydantic-core **2.18.4**、annotated-types **0.7.0**；pip工具会按安装入口的要求更新。Transformers 4.40.2不接受LLaMA 3.1的RoPE配置，因此不能原样保留该版本。已安装的PEFT 0.13.2/Accelerate 0.34.2/bitsandbytes 0.43.3等上个版本的项目依赖也可以继续用，不强制降级。详见 [依赖范围](environment/requirements-qwen-image.txt)。补充包只安装在项目 `.venv`，不修改镜像原Conda环境。安装后校验实际生效版本，保存至 `autodl/.cache/image-environment.json`（记录Python、Torch来源、全部依赖版本和依赖要求的校验值）。默认使用SDPA，不需要重新编译或升级镜像自带的FlashAttention、AutoGPTQ、AWQ等WebUI扩展。训练概率计算适配旧版 `num_logits_to_keep` 接口，保留 LoRA/GRPO、冻结回答模型和检查点恢复流程。
 
 使用 [configs/autodl-qwen-image.json](configs/autodl-qwen-image.json)：Qwen 路径为 `/root/Qwen2.5/text-generation-webui/models`；LLaMA、数据、输出仍使用上表路径。Qwen 的 models 下须有唯一的 7B Instruct HF 模型目录；有多个时请复制配置，将 `qwen_path` 指向具体目录，再通过 `CONFIG=/absolute/path/config.json bash run_qwen_image.sh` 启动。两个模型都需要原始 HF **safetensors** 权重和 tokenizer，不能把 GGUF/AWQ/GPTQ 文件直接交给此 NF4 训练入口。镜像页面没有说明自带 LLaMA，需要保留你已准备的 LLaMA 权重。
 
@@ -109,6 +109,7 @@ cd /root/autodl-tmp/RAG-Team6
 git switch feat/autodl-qwen-image
 git pull --ff-only
 cd autodl
+bash scripts/install.sh
 bash run_qwen_image.sh --from train
 ```
 
@@ -119,6 +120,30 @@ bash run_qwen_image.sh --from train
 失败信息保存在预测文件旁的 `*.failure.json`（样本ID、错误及已完成题数），生成诊断保存在工作目录 `diagnostics/answer-*.json`（各次原始输出、可用ID、可见文档），不包含答案标签。不手工删除未知引用、不把失败当正常预测；持续失败时需要检查这些真实记录。
 
 `change_rejected` 表示候选修正未被采用，不是进程报错。新终端日志打印拒绝类型：`same_answer`、`prefers_current`、`insufficient_evidence`、`missing_citations` 或 `invalid_verifier_output`。仍保留A/B顺序互换验证，不为了减少拒绝率自动放行修正。
+
+## 长解释循环、JSON未闭合后的单题检查与恢复
+
+如果诊断中的三次输出都以 `explanation` 开始，反复编造亲属关系并停在字符串中间，增加生成长度不能解决无依据推演。当前版本对冻结的Qwen使用受约束JSON解码：先输出答案，再输出引用和最多320字符的解释；最多4个引用，ID只能从当前可见文档中选择。验证门控同样约束JSON结构，LLaMA批判的采样与训练分布保持原样。解码依赖见 [LM Format Enforcer 0.11.3](https://github.com/noamgat/lm-format-enforcer/tree/v0.11.3)。
+
+更新后先运行 `bash scripts/install.sh` 补齐解码依赖，不重新安装镜像Torch/CUDA。然后可只加载Qwen检查失败题，不读取标签、不生成准确率：
+
+```bash
+.venv/bin/python -m autodl_rag --config configs/autodl-qwen-image.json \
+  probe-answer --split tune --id train:164486 \
+  --output /root/autodl-tmp/rag-team6-work/diagnostics/probe-164486.json
+```
+
+这是通用的按ID检查入口，不包含该题答案。格式合规不保证事实正确；缺少必要关系时应由模型依据文档回答 `unknown`，而非在程序里替换失败答案。仍然发生长度截断时，真实重试预算可从384提升到768、1536 token，并受模型上下文上限约束。失败诊断新增生成结束原因、输出token数和上下文限制信息，三次失败仍中止。
+
+单题检查完成后，用后台入口继续已有训练运行的评估与后续阶段：
+
+```bash
+nohup bash run_qwen_image.sh --from train > run_background.log 2>&1 < /dev/null &
+echo $! > run_background.pid
+tail -f run_background.log
+```
+
+先确认没有另一份任务仍在运行。退出日志查看或断开终端不会结束后台任务；服务器实例须保持开机。沿用原 `CONFIG`/`RUN_NAME`。已有完整训练summary时不重训；由于本次推理版本变化，原41题等旧预测会归档，从第1题重新评估，避免混用两个版本的结果。
 
 ## 一、通用 CUDA 镜像的上传与安装
 
@@ -341,7 +366,7 @@ python -m autodl_rag --config configs/autodl.json export \
 
 `critic_stop`、`max_revisions`、`invalid_critique`、`invalid_revision`、`change_rejected`分别记录。无效批判保留已有有效答案，但不当作正确自主停止。最后一次拒绝也不会掩盖此前接受的有害修正，奖励与评估始终对比最初初答和最终答案。
 
-Qwen初答/修正格式失败最多真实重答一次并计入调用；基础设施异常直接报错。CSV导出不悄悄重生成答案，因此验证轨迹与提交预测使用同一套结果语义。
+Qwen初答/修正格式失败最多进行三次真实生成并计入调用；基础设施异常直接报错。CSV导出不悄悄重生成答案，因此验证轨迹与提交预测使用同一套结果语义。
 
 ### 强化学习
 

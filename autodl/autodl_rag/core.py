@@ -9,7 +9,7 @@ import unicodedata
 from collections import Counter
 from pathlib import Path
 
-PROMPT_VERSION = "autodl-v2-citation-repair"
+PROMPT_VERSION = "autodl-v3-bounded-json"
 
 
 def digest_file(path):

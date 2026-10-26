@@ -225,19 +225,20 @@ class LocalModel:
                     "Question/state exceeds max_input_tokens even after evidence budgeting; increase the budget"
                 )
 
-    def generate(self, system, payload, sample=False):
+    def generate(self, system, payload, sample=False, max_new_tokens=None):
         import torch
 
         messages, prompt, allowed = self.fit_messages(system, payload)
         inputs = torch.tensor([prompt], device=self.device)
         self.model.eval()
-        budget = (
+        requested = max_new_tokens or (
             self.cfg["critic_tokens"]
             if self.role == "critic"
             else self.cfg["answer_tokens"]
         )
         max_positions = getattr(self.model.config, "max_position_embeddings", 32768)
-        if len(prompt) + budget > max_positions:
+        budget = min(requested, max_positions - len(prompt))
+        if budget < 1:
             raise ValueError("Prompt + generation exceeds model context window")
         options = {
             "max_new_tokens": budget,
@@ -245,19 +246,28 @@ class LocalModel:
             "pad_token_id": self.tokenizer.pad_token_id,
             "use_cache": True,
             "repetition_penalty": 1.0,
-            "top_k": 0,
+            "top_k": 0 if sample else 50,
             "top_p": 1.0,
             "temperature": self.cfg["temperature"] if sample else 1.0,
         }
         eos = self.model.generation_config.eos_token_id
         if eos is not None:
             options["eos_token_id"] = eos
-        with torch.no_grad(), torch.autocast("cuda", dtype=self.dtype):
+        if self.role == "qwen":
+            from .structured import QwenJsonGuard
+
+            if not hasattr(self, "_json_guard"):
+                self._json_guard = QwenJsonGuard(self.tokenizer, self.model.config.vocab_size)
+            options["prefix_allowed_tokens_fn"] = self._json_guard.prefix(payload, allowed)
+        device_type = torch.device(self.device).type
+        with torch.no_grad(), torch.autocast(device_type, dtype=self.dtype, enabled=device_type == "cuda"):
             out = self.model.generate(
                 input_ids=inputs, attention_mask=torch.ones_like(inputs), **options
             )
         completion = out[0, len(prompt) :].tolist()
         raw = self.tokenizer.decode(completion, skip_special_tokens=True).strip()
+        from .structured import generation_status
+
         return {
             "raw": raw,
             "prompt_ids": prompt,
@@ -265,6 +275,10 @@ class LocalModel:
             "allowed": allowed,
             "prompt_tokens": len(prompt),
             "completion_tokens": len(completion),
+            **generation_status(completion, budget, eos),
+            "requested_max_new_tokens": requested,
+            "context_limited": budget < requested,
+            "structured_json": self.role == "qwen",
             "documents": json.loads(messages[1]["content"]).get("documents", []),
         }
 
@@ -366,7 +380,7 @@ def doctor(cfg):
         "models": {},
         "packages": {},
     }
-    for name in ("transformers", "peft", "accelerate", "bitsandbytes", "ijson"):
+    for name in ("transformers", "peft", "accelerate", "bitsandbytes", "ijson", "lm-format-enforcer"):
         results["packages"][name] = importlib.metadata.version(name)
     if Version(results["packages"]["transformers"]) < Version("4.45.2"):
         raise RuntimeError(

@@ -53,6 +53,9 @@ IMAGE_PACKAGES = {
     "typing-extensions": "4.9.0",
     "setuptools": "69.5.1",
     "wheel": "0.43.0",
+    "pydantic": "2.7.3",
+    "pydantic-core": "2.18.4",
+    "annotated-types": "0.7.0",
 }
 
 
@@ -105,6 +108,8 @@ class ImageEnvironmentTests(unittest.TestCase):
                 "transformers": "4.45.2",
                 "tokenizers": "0.20.3",
                 "ijson": "3.4.0",
+                "lm-format-enforcer": "0.11.3",
+                "interegular": "0.3.3",
             },
         }
         with (
@@ -145,7 +150,7 @@ class ImageEnvironmentTests(unittest.TestCase):
         self.assertIn("numpy", names)
 
     @unittest.skipUnless(HAS_PACKAGING, "Package version checks need optional packaging")
-    def test_native_image_needs_only_transformers_tokenizers_and_ijson(self):
+    def test_native_image_reuses_existing_libraries_and_adds_required_decoders(self):
         with self.assertRaises(RuntimeError) as failure:
             validate_packages(IMAGE_PACKAGES)
         self.assertIn("transformers", str(failure.exception))
@@ -156,6 +161,8 @@ class ImageEnvironmentTests(unittest.TestCase):
             "transformers": "4.45.2",
             "tokenizers": "0.20.3",
             "ijson": "3.4.0",
+            "lm-format-enforcer": "0.11.3",
+            "interegular": "0.3.3",
         }
         validate_packages(selected)
         for name in ("peft", "accelerate", "bitsandbytes", "numpy", "huggingface-hub"):
@@ -168,6 +175,8 @@ class ImageEnvironmentTests(unittest.TestCase):
             "transformers": "4.45.2",
             "tokenizers": "0.20.3",
             "ijson": "3.4.0",
+            "lm-format-enforcer": "0.11.3",
+            "interegular": "0.3.3",
             "peft": "0.13.2",
             "accelerate": "0.34.2",
             "bitsandbytes": "0.43.3",
@@ -187,6 +196,8 @@ class ImageEnvironmentTests(unittest.TestCase):
             "transformers": "4.45.2",
             "tokenizers": "0.20.3",
             "ijson": "3.4.0",
+            "lm-format-enforcer": "0.11.3",
+            "interegular": "0.3.3",
         }
         fake_torch = types.SimpleNamespace(
             __file__="/image/torch/__init__.py",
@@ -213,7 +224,7 @@ class ImageEnvironmentTests(unittest.TestCase):
             version=types.SimpleNamespace(cuda="11.8"),
             cuda=types.SimpleNamespace(is_available=lambda: True),
         )
-        versions = {**IMAGE_PACKAGES, "ijson": "3.4.0"}
+        versions = {**IMAGE_PACKAGES, "ijson": "3.4.0", "lm-format-enforcer": "0.11.3"}
         with (
             patch.dict("sys.modules", {"torch": fake_torch}),
             patch("importlib.metadata.version", side_effect=versions.__getitem__),

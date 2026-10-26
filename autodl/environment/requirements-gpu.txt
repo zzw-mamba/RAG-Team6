@@ -11,3 +11,8 @@ tqdm==4.67.1
 pip==25.2
 setuptools==80.9.0
 wheel==0.45.1
+lm-format-enforcer==0.11.3
+interegular==0.3.3
+pydantic==2.7.3
+pydantic-core==2.18.4
+annotated-types==0.7.0
