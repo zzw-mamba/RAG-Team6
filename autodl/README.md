@@ -100,6 +100,26 @@ bash run_all.sh --from predict
 
 仍支持`CONFIG`、`RUN_NAME`、`PILOT_GROUPS`、`SAVE_EVERY`、`RESUME`和`WARM_START`。例如`PILOT_GROUPS=16 SAVE_EVERY=4 bash run_all.sh`自动使用名称`pilot16`；如手动指定`RUN_NAME`则优先使用该值。各阶段沿用原有恢复约束，第一次检查点之前中断的训练不会被伪装成可精确恢复。原来的`bash scripts/all.sh`也会转到这个完整入口。
 
+## 调参评估遇到 Invalid evidence_ids 后恢复
+
+如果已经出现 `rl/tune`，说明训练脚本已进入检查点调参评估。Qwen初答引用格式错误会停止当前样本，不会伪造空答案继续。修复版本显式给出可用ID清单，按实际保留文档动态更新，重试时加入上次原始输出与具体错误，最多进行三次真实生成；仍失败会保存诊断文件。
+
+```bash
+cd /root/autodl-tmp/RAG-Team6
+git switch feat/autodl-qwen-image
+git pull --ff-only
+cd autodl
+bash run_qwen_image.sh --from train
+```
+
+已存在完整 `training/pilot64/summary.json` 时会跳过优化器训练，复用原检查点继续选模。由于提示词/推理代码更新，旧调参预测先归档到原输出目录的 `.archive/` 下，再从第1题重新评估所有候选，保证共享相同版本的初答；**这是重新评估，不是重新训练**。原训练manifest和模型权重保留。使用自定义 `RUN_NAME`/`CONFIG` 时沿用原值。
+
+阶段脚本为推理命令启用 `--resume --restart-on-code-change`：该选项只允许实现版本变化时归档旧预测、manifest、失败记录及对应CSV；配置、数据、模型或adapter变化仍拒绝恢复。单独调用CLI可选择不启用这一重启选项。新代码下的中断继续按已完成前缀恢复。
+
+失败信息保存在预测文件旁的 `*.failure.json`（样本ID、错误及已完成题数），生成诊断保存在工作目录 `diagnostics/answer-*.json`（各次原始输出、可用ID、可见文档），不包含答案标签。不手工删除未知引用、不把失败当正常预测；持续失败时需要检查这些真实记录。
+
+`change_rejected` 表示候选修正未被采用，不是进程报错。新终端日志打印拒绝类型：`same_answer`、`prefers_current`、`insufficient_evidence`、`missing_citations` 或 `invalid_verifier_output`。仍保留A/B顺序互换验证，不为了减少拒绝率自动放行修正。
+
 ## 一、通用 CUDA 镜像的上传与安装
 
 此节对应 `RAG_ENV_PROFILE=modern`；使用上方 Qwen 镜像专用入口时不执行这里的 Torch 升级。通用环境推荐选择 AutoDL 的 **Python 3.11/3.12、GPU可用**环境，以及支持BF16的RTX4090/L20/L40S/A系列等显卡。安装脚本复用已有的可用CUDA PyTorch；如果没有Torch、只有CPU版或版本低于2.6，则在项目`.venv`里安装`torch==2.8.0`的CUDA12.8构建，不修改Miniconda base，也不重装系统CUDA。默认NF4量化两模型，并使用梯度检查点；实际峰值显存需通过smoke确认。

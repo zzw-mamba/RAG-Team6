@@ -9,7 +9,7 @@ import unicodedata
 from collections import Counter
 from pathlib import Path
 
-PROMPT_VERSION = "autodl-v1"
+PROMPT_VERSION = "autodl-v2-citation-repair"
 
 
 def digest_file(path):
@@ -170,10 +170,11 @@ def json_object(raw):
 
 def citations(obj, allowed):
     refs = obj.get("evidence_ids")
-    if not isinstance(refs, list) or any(
-        not isinstance(r, str) or r not in allowed for r in refs
-    ):
-        raise InvalidOutput("Invalid evidence_ids")
+    if not isinstance(refs, list) or any(not isinstance(r, str) or r not in allowed for r in refs):
+        raise InvalidOutput(
+            f"Invalid evidence_ids: expected a JSON list containing only visible document IDs "
+            f"{sorted(allowed)!r}; got {refs!r}"
+        )
     return list(dict.fromkeys(refs))
 
 

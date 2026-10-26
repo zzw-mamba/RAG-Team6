@@ -37,6 +37,11 @@ def main():
         help="0 means all; use a separate output path for smoke",
     )
     run.add_argument("--resume", action="store_true")
+    run.add_argument(
+        "--restart-on-code-change",
+        action="store_true",
+        help="Archive old-code predictions and re-evaluate; still rejects config/data/model changes",
+    )
     train = sub.add_parser(
         "train", help="Train only critic LoRA against real Qwen multi-turn outcomes"
     )
@@ -117,6 +122,7 @@ def main():
             args.adapter,
             args.limit,
             args.resume,
+            restart_on_code_change=args.restart_on_code_change,
         )
     elif args.command == "evaluate":
         from .experiment import evaluate

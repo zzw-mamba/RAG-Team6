@@ -4,10 +4,12 @@ import csv
 import itertools
 import os
 import random
+import time
 from collections import Counter
 from pathlib import Path
 
 from .core import (
+    InvalidOutput,
     digest_file,
     exact,
     public,
@@ -71,7 +73,15 @@ def repair_incomplete_tail(path):
 
 
 def run_dataset(
-    cfg, split, mode, output, adapter=None, limit=0, resume=False, pipeline=None
+    cfg,
+    split,
+    mode,
+    output,
+    adapter=None,
+    limit=0,
+    resume=False,
+    pipeline=None,
+    restart_on_code_change=False,
 ):
     if mode == "rl" and not adapter:
         raise ValueError("--mode rl requires --adapter")
@@ -93,19 +103,47 @@ def run_dataset(
         "limit": limit,
         "adapter": adapter_identity(adapter),
         "qwen": model_identity(cfg["qwen_path"]),
-        "reranker": model_identity(cfg["reranker_path"])
-        if cfg.get("reranker_path")
-        else None,
+        "reranker": model_identity(cfg["reranker_path"]) if cfg.get("reranker_path") else None,
         "critic": model_identity(cfg["llama_path"]) if mode != "rag" else None,
     }
     done = []
     if output.exists() or meta.exists():
         if not resume:
             raise FileExistsError(f"{output}: use --resume or a new output path")
-        if not meta.exists() or read_json(meta)["signature"] != signature:
-            raise ValueError(
-                "Resume prediction config/data/code/model/adapter signature mismatch"
-            )
+        old_signature = read_json(meta).get("signature") if meta.exists() else None
+        if old_signature != signature:
+            source_only = old_signature is not None and {
+                k: v for k, v in old_signature.items() if k != "implementation"
+            } == {k: v for k, v in signature.items() if k != "implementation"}
+            if restart_on_code_change and source_only:
+                archive = output.parent / ".archive" / f"{output.stem}-{time.time_ns()}"
+                archive.mkdir(parents=True)
+                save_json(
+                    archive / "restart.json",
+                    {
+                        "reason": "explicit restart after implementation change; no predictions reused",
+                        "previous_signature": old_signature,
+                        "new_signature": signature,
+                    },
+                )
+                for path in (
+                    output,
+                    meta,
+                    output.with_suffix(".failure.json"),
+                    output.with_suffix(".csv"),
+                ):
+                    if path.exists():
+                        path.rename(archive / path.name)
+                save_json(meta, {"signature": signature, "complete": False})
+                print(
+                    f"Archived previous-code predictions to {archive}; re-evaluating all rows.",
+                    flush=True,
+                )
+            else:
+                raise ValueError(
+                    "Resume prediction config/data/code/model/adapter signature mismatch. "
+                    "For implementation-only changes use --restart-on-code-change to archive and re-evaluate."
+                )
         repair_incomplete_tail(output)
         done = list(records(output)) if output.exists() else []
     else:
@@ -125,7 +163,23 @@ def run_dataset(
         pipeline = pipeline or Pipeline(cfg, mode=mode, adapter=adapter)
         with output.open("a", encoding="utf-8") as f:
             for row in itertools.chain([first], iterator):
-                trace = pipeline.run(public(row))
+                try:
+                    trace = pipeline.run(public(row))
+                except InvalidOutput as e:
+                    failure = output.with_suffix(".failure.json")
+                    save_json(
+                        failure,
+                        {
+                            "id": row["id"],
+                            "question": row["question"],
+                            "error": str(e),
+                            "completed_rows": len(done),
+                            "note": "No placeholder prediction written. Fix and resume this row.",
+                        },
+                    )
+                    raise InvalidOutput(
+                        f"{e}. Failed sample id={row['id']}; details: {failure}"
+                    ) from e
                 trace.pop("_samples", None)
                 write_line(f, trace)
                 os.fsync(f.fileno())
@@ -134,6 +188,15 @@ def run_dataset(
                     f"{mode}/{split}: {len(done)} id={row['id']} answer={trace['final']['answer']!r} stop={trace['stop_reason']}",
                     flush=True,
                 )
+                if trace["stop_reason"] == "change_rejected":
+                    judges = trace.get("turns", [{}])[-1].get("verification", [])
+                    if judges:
+                        last = judges[-1]
+                        print(
+                            f"  rejection={last.get('rejection', 'unspecified')} "
+                            f"reason={last.get('reason', last.get('invalid', ''))}",
+                            flush=True,
+                        )
     if not output.exists():
         raise ValueError("Dataset is empty")
     result = {

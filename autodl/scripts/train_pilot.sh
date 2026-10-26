@@ -25,7 +25,7 @@ for checkpoint in "$TRAIN_DIR"/checkpoints/group-*; do
   [[ "$checkpoint" =~ /group-[0-9]{6}$ ]] || continue
   [[ -f "$checkpoint/complete.json" ]] || continue
   tag="$(basename "$checkpoint")"
-  python -m autodl_rag --config "$CONFIG" run --split tune --mode rl --adapter "$checkpoint" --output "$TRAIN_DIR/tune/$tag.jsonl" --resume
+  python -m autodl_rag --config "$CONFIG" run --split tune --mode rl --adapter "$checkpoint" --output "$TRAIN_DIR/tune/$tag.jsonl" --resume --restart-on-code-change
 done
 python -m autodl_rag --config "$CONFIG" select --candidates "$TRAIN_DIR/tune" --output "$TRAIN_DIR/selection.json"
 echo "Selection: $TRAIN_DIR/selection.json"

@@ -10,7 +10,7 @@ OUT="$WORK/test/$RUN_NAME"
 for mode in rag critic rl; do
   EXTRA=()
   if [[ "$mode" == rl ]]; then EXTRA+=(--adapter "$ADAPTER"); fi
-  python -m autodl_rag --config "$CONFIG" run --split test --mode "$mode" "${EXTRA[@]}" --output "$OUT/$mode.jsonl" --resume
+  python -m autodl_rag --config "$CONFIG" run --split test --mode "$mode" "${EXTRA[@]}" --output "$OUT/$mode.jsonl" --resume --restart-on-code-change
   if [[ ! -f "$OUT/$mode.csv" ]]; then
     python -m autodl_rag --config "$CONFIG" export --predictions "$OUT/$mode.jsonl" --output "$OUT/$mode.csv"
   fi

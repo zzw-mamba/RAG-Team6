@@ -196,6 +196,8 @@ class LocalModel:
         # Fit before generation, never blindly left-truncate the question or chat delimiters.
         payload = json.loads(json.dumps(payload, ensure_ascii=False))
         while True:
+            # Recompute after EVERY budgeting pass: trimmed documents cannot be cited.
+            payload["allowed_evidence_ids"] = [d["id"] for d in payload.get("documents", [])]
             messages = [
                 {"role": "system", "content": system},
                 {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
