@@ -8,6 +8,8 @@
 
 冻结Qwen的回答和顺序互换门控使用受约束JSON解码，答案字段优先、解释长度有上限、引用限定为预算后可见文档ID。训练中的LLaMA不使用该约束，保持采样和梯度概率一致。`probe-answer`只检查指定公开问题的真实Qwen输出，不读取标签或计算准确率；它与正式初答共享缓存和推理版本。
 
+并行测试预测由包外scripts/predict_parallel.py调度相同Pipeline实例，spawn子进程独立持有模型和只读检索连接，父进程沿用run_dataset顺序保存。只向worker传递公开字段，限制预取数量；失败保留已完成前缀，不跳题。调度实现和测速记录独立于原推理源码签名，允许既有预测续跑。
+
 与原框架的主要区别是：批判JSON使用`action=stop/revise`；修正时允许定向补检索；候选通过Qwen顺序互换验证后接受；强化学习按最多两轮完整轨迹计算奖励。`max_rounds`配置限制批判循环次数，对应停止原因`max_revisions`，与`critic_stop`、`invalid_critique`、`invalid_revision`、`change_rejected`分别记录。已有有效终答会在批判格式失败后保留，该失败不计作正确自主停止。
 
 原框架和AutoDL模块使用不同运行目录与结果格式，不直接混合评分。AutoDL的CPU/微型模型测试不替代目标GPU的真实pilot验证。

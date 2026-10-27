@@ -167,6 +167,38 @@ tail -f run_background.log
 
 这会沿用已有选中的adapter。实现版本更新会归档旧的confirmation预测并从第1题重算。若要用新代码重新比较所有检查点、重新选模，将 `--from evaluate` 改为 `--from train`；存在完整训练summary时仍跳过优化器训练。
 
+## 单卡48GB的双进程RL预测与测速
+
+批大小为1的串行解码不一定占满GPU。新增 `run_submit_rl_parallel.sh`，使用spawn启动两路独立Pipeline，各自加载相同的4-bit Qwen和LLaMA/LoRA，复用已有初答缓存。父进程沿用原run_dataset校验、顺序写入、失败中止和CSV导出；最多预取workers×2题，不一次装入整个测试集。没有改变提示词、精度、检索、修正轮数或训练权重。
+
+本次只增加scripts/运行入口和测试，autodl_rag包源码未修改，其implementation仍为c497291494fd7e4b196152d7a9e7e5183d186d0c4142842f4501fbb22317e7d7，因此可直接接续5eb8e30的有效预测前缀。新入口不启用源码变化归档重算；数据/配置/模型/adapter变化仍会明确拒绝续跑。调度脚本SHA256、进程数、加载耗时、预测吞吐写入旁边的 `.parallel-runtime.json`，每次运行另追加 `.parallel-runs.jsonl`。
+
+先更新分支，再用相同的16道真实测试题比较单进程与双进程。`--stop-existing`仅终止正在写入本次production rl.jsonl的旧串行test/rl进程，然后等待项目锁；它不终止训练或其他输出的任务。测速使用独立目录，不修改已有rl.jsonl或提交CSV：
+
+```bash
+cd /root/autodl-tmp/RAG-Team6/autodl
+BENCH_DIR="/root/autodl-tmp/rag-team6-work/speed-check/$(date +%Y%m%d-%H%M%S)"
+bash run_submit_rl_parallel.sh --workers 1 --limit 16 --stop-existing \
+  --output "$BENCH_DIR/worker1.jsonl"
+bash run_submit_rl_parallel.sh --workers 2 --limit 16 \
+  --output "$BENCH_DIR/worker2.jsonl"
+cat "$BENCH_DIR/worker1.parallel-runtime.json"
+cat "$BENCH_DIR/worker2.parallel-runtime.json"
+```
+
+比较 `seconds_per_new_row`，越低越快；加载时间单独记录，16题仅作吞吐试验，不能评价准确率。若实际无加速或显存不足，用workers=1继续相同输出，不更换模型或伪造预测。本机只完成CPU调度验证，尚未在用户4090D上实测双进程模型加载、显存和吞吐，不能承诺翻倍。
+
+选择实测更快的进程数，例如2，后台接续正式RL预测：
+
+```bash
+nohup bash run_submit_rl_parallel.sh --workers 2 --stop-existing \
+  >> run_submit_rl_parallel.log 2>&1 < /dev/null &
+echo $! > run_background.pid
+tail -f run_submit_rl_parallel.log
+```
+
+仍输出 `test/pilot64/rl.csv`，只有全量题目完成才导出。两个进程拥有两份模型和KV缓存；本入口限制为1或2路，双进程仅允许4-bit配置，不建议未经实测增加更多副本。每题仍为相同greedy推理，GPU并发是否出现数值差异仍需实际验证。
+
 ## 一、通用 CUDA 镜像的上传与安装
 
 此节对应 `RAG_ENV_PROFILE=modern`；使用上方 Qwen 镜像专用入口时不执行这里的 Torch 升级。通用环境推荐选择 AutoDL 的 **Python 3.11/3.12、GPU可用**环境，以及支持BF16的RTX4090/L20/L40S/A系列等显卡。安装脚本复用已有的可用CUDA PyTorch；如果没有Torch、只有CPU版或版本低于2.6，则在项目`.venv`里安装`torch==2.8.0`的CUDA12.8构建，不修改Miniconda base，也不重装系统CUDA。默认NF4量化两模型，并使用梯度检查点；实际峰值显存需通过smoke确认。

@@ -41,6 +41,9 @@
 - 官方分词器来源：[Qwen2.5-7B-Instruct/tokenizer.json](https://huggingface.co/Qwen/Qwen2.5-7B-Instruct/blob/main/tokenizer.json)，本地文件SHA256为c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539。仅下载分词器，未下载模型权重或比赛答案；本次验证仍不等于实际7B推理或准确率验证。
 - 可在autodl目录通过 `QWEN_TOKENIZER_JSON=/absolute/path/to/tokenizer.json .venv/bin/python -m unittest discover -s tests -p test_structured.py -v` 运行官方分词器回归。测试本身不联网、不自动下载文件。服务器仍应先运行probe-answer检查train:45111，再恢复评估。
 
+- 新增5项纯CPU并行调度测试：乱序任务按源顺序返回；接续已有串行预测并保留原字节前缀、按官方模板顺序导出；worker失败不写入后续结果并保留失败题；限定测速不预取额外样本；模型初始化失败解除其他worker的等待。全部使用明确的合成Pipeline，不作为模型效果或GPU加速证据。
+- 本次只新增包外脚本、测试和文档；原推理implementation签名保持c497291494fd7e4b196152d7a9e7e5183d186d0c4142842f4501fbb22317e7d7，保留旧预测和初答缓存。尚未在4090D上实测双副本显存、CUDA并发吞吐或逐token数值一致性；提供单/双进程16题实测入口后再选择正式进程数。不能据CPU调度测试承诺加速。
+
 ## 验证含义
 
 上述合成数据、预设响应和微型随机模型仅测试程序，不代表比赛准确率或7B/8B模型表现；测试工具不会进入正式推理作为失败兜底。
