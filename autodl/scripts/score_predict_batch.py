@@ -207,7 +207,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True)
     parser.add_argument("--name", default="score-v2")
-    parser.add_argument("--batch-size", type=int, choices=(1, 2, 4, 8), default=8)
+    parser.add_argument("--batch-size", type=int, choices=(1, 2, 4, 8, 16), default=8)
     parser.add_argument("--max-batch-tokens", type=int, default=147456)
     parser.add_argument("--benchmark", type=int, default=0, metavar="N")
     parser.add_argument("--stop-existing", action="store_true")

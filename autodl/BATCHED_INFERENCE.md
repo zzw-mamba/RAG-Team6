@@ -49,6 +49,15 @@ BATCH_SIZE=2 MAX_BATCH_TOKENS=32768 BATCH_PILOT_SIZE=32 \
   bash run_score_v2_batch.sh all /root/autodl-fs/zzw/configs/new-server.json
 ```
 
+最大 batch 可设 16，默认仍为 8。16 个长输入需要同时提高 token 预算，否则仍会拆成小批：
+
+```bash
+BATCH_SIZE=16 MAX_BATCH_TOKENS=294912 BATCH_PILOT_SIZE=32 \
+  bash run_score_v2_batch.sh all /root/autodl-fs/zzw/configs/new-server.json
+```
+
+该上限覆盖 16 条 16K 提示及输出，不是预先分配的显存量。模型权重仍只有一份，KV cache 和激活值随批量增加。显存不足时拆批；速度是否更快以相同 32 题的 rows_per_hour 为准，16 不保证比 8 快，也不自动提高准确率。改变批量需重新 pilot，batch=8 的验证记录不能代替。尚未在目标 96GB GPU 实测 batch 16。
+
 验证报告：`work_dir/optimization/score-v2/batch-validation/batch-8-tokens-147456.json`。
 配对原始轨迹保存在 `batch-validation/pilot-*/{sequential,batch}.jsonl`，便于逐题检查差异。
 生产调度统计：`<selected>/test.batch-runtime.json`；轨迹标明 execution_backend。

@@ -64,6 +64,11 @@ class SyntheticController:
 
 
 class SharedBatchTests(unittest.TestCase):
+    def test_sixteen_long_requests_need_a_matching_token_cap(self):
+        items = [{"index": i, "budget": 1536, "prompt": [1] * 16384} for i in range(16)]
+        self.assertEqual([len(g) for g in pack(items, 16, 294912)], [16])
+        self.assertEqual([len(g) for g in pack(items, 16, 147456)], [8, 8])
+
     def test_production_requires_passing_pilot_for_the_exact_batch_backend(self):
         with tempfile.TemporaryDirectory() as temp:
             folder = Path(temp)
