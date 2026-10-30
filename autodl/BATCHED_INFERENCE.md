@@ -6,6 +6,7 @@
 
 - 仅一个进程加载一份冻结 Qwen。多个 RAG 控制线程各有自己的检索连接/状态，通过同一个请求 broker 提交生成请求；所有 GPU 生成调用在同一个线程执行。
 - broker 短暂合并请求，再按生成预算与输入长度分组，左侧 padding 并构造正确 attention mask。输入证据仍由原 fit_messages 预算，批处理不会为了凑 batch 额外截断证据。
+- 对 `retrieval_plan_trigger=always`，先完成查询规划/检索，再生成一次答案。旧流程在规划之前及多轮规划之间生成的答案没有传入规划器，最后也被覆盖；新版不再生成这些被丢弃的答案。规划器及最终回答的公开输入保持一致，仍必须通过真实配对 pilot。unknown 条件触发及无规划配置保持原流程。
 - 每个样本各自维护 JSON parser、可见文档 ID 和 EOS 状态。答案、查询规划和格式修复可以分批推进，引用范围不串题。生成结束后按首个 EOS 裁去批量 padding。
 - JSON 过滤器只处理当前行生成的 token 前缀，不在每一步将整个长提示拷回 CPU。微型 Qwen 测试对比它与原完整前缀解码约束的等价性，包括 Unicode。
 - `--max-batch-tokens` 限制批内 padding 后的输入+输出总预算；单个长请求不被裁短。CUDA OOM 时自动拆小同一批真实请求，单样本仍 OOM 就报错，不伪造答案。
@@ -25,7 +26,7 @@ nohup bash run_score_v2_batch.sh all \
   > /root/autodl-fs/zzw/logs/score-v2-batch.log 2>&1 < /dev/null &
 ```
 
-默认 batch size=4、padding 后 token 总预算 32768、pilot 32 道 confirmation 题。它先停止同配置/实验名下旧的顺序或并行预测，等实验锁释放后再加载模型；不停止 tune/confirmation、训练或其他项目。不需要重新选择配置或重新训练。现有 reranker_path 必须为 null；不静默关闭用户配置的重排器。
+默认 batch size=8、padding 后 token 总预算 147456、pilot 32 道 confirmation 题，面向当前 96GB 单卡环境。预算覆盖 8 条 16K 提示及其输出，避免小预算反复把一批拆成几批。它先停止同配置/实验名下旧的顺序或并行预测，等实验锁释放后再加载模型；不停止 tune/confirmation、训练或其他项目。不需要重新选择配置或重新训练。现有 reranker_path 必须为 null；不静默关闭用户配置的重排器。
 
 `all` 依次执行：
 
@@ -48,15 +49,17 @@ BATCH_SIZE=2 MAX_BATCH_TOKENS=32768 BATCH_PILOT_SIZE=32 \
   bash run_score_v2_batch.sh all /root/autodl-fs/zzw/configs/new-server.json
 ```
 
-验证报告：`work_dir/optimization/score-v2/batch-validation/batch-4-tokens-32768.json`。
+验证报告：`work_dir/optimization/score-v2/batch-validation/batch-8-tokens-147456.json`。
 配对原始轨迹保存在 `batch-validation/pilot-*/{sequential,batch}.jsonl`，便于逐题检查差异。
 生产调度统计：`<selected>/test.batch-runtime.json`；轨迹标明 execution_backend。
 验证记录绑定配置、模型、推理源码、批处理脚本、主要依赖版本、GPU 型号/计算能力及 confirmation 数据；上述内容变化后需要重新 pilot。
 
-本次只新增包外 backend/入口和测试，原推理包源码及配置不变，可以延续原先签名的已完成进度。调度文件的哈希另外记录，不以删改旧 manifest 绕过验证。
+本次只修改包外 backend/入口和测试，原推理包源码及配置不变，可以延续原先签名的已完成进度。调度文件的哈希另外记录，不以删改旧 manifest 绕过验证。plan-before-answer 使用独立版本的初答缓存键，轨迹记录 execution_strategy，真实生成调用数如实计数，不把少调用一轮描述成模型训练收益。
+
+`generation_stats` 另外记录请求数、实际批次大小、预算分组数、因 token/count 上限增加的批次数、原始/补齐提示 token 数、输出 token 数、JSON 前缀 CPU 时间和 generate 总墙钟时间。前缀 CPU 时间不含 GPU 同步或 Transformers 构造 mask 的开销，不能当作完整 CPU 性能剖析。
 
 ## 验证范围
 
-本地使用 Torch 2.8.0 / Transformers 4.56.2 的真实微型 Qwen 随机权重，在 CPU 检查左 padding、不同长度输出、逐行引用隔离、顺序与批量输出、Unicode 前缀约束和 OOM 拆批控制；另检查模型只初始化一次、并发请求合并、顺序写出、错误传播、已完成结果无需加载模型和 pilot 门槛。测试不是研究成绩。
+本地使用 Torch 2.8.0 / Transformers 4.56.2 的真实微型 Qwen 随机权重，在 CPU 检查左 padding、不同长度输出、逐行引用隔离、顺序与批量输出、Unicode 前缀约束和 OOM 拆批控制；另检查模型只初始化一次、并发请求合并、顺序写出、错误传播、已完成结果无需加载模型和 pilot 门槛。plan-first 回归分别比较一轮/两轮、空查询、无效规划和 unknown 触发，断言规划输入、最终回答输入及证据保持一致。测试不是研究成绩。
 
 尚无目标 96GB CUDA 显卡上 7B 权重的实测速率或显存结果；服务器 pilot 是必要检查。当前仅支持冻结 Qwen 的确定性普通 RAG，不用于 critic 采样、LoRA 训练或 GRPO log-prob 计算。默认多进程入口仍保留，可用于比较。

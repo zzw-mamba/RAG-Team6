@@ -15,7 +15,16 @@ from concurrent.futures import Future
 from dataclasses import dataclass
 from pathlib import Path
 
-from autodl_rag.core import public, records
+from autodl_rag.core import (
+    InvalidOutput,
+    fingerprint,
+    json_object,
+    public,
+    read_json,
+    records,
+    save_json,
+)
+from autodl_rag.pipeline import PLAN, Pipeline
 
 
 @dataclass
@@ -54,14 +63,18 @@ class BatchPrefix:
     def __init__(self, prefixes, width, eos):
         self.prefixes, self.width = prefixes, width
         self.eos = list(eos) if isinstance(eos, (tuple, list)) else [eos]
+        self.cpu_seconds = 0.0
 
     def __call__(self, batch_id, sent):
         # Only copy generated tokens off the GPU, not the 16K-token prompt on
         # every step. LMFE starts its root state at the empty generated prefix.
         generated = sent[self.width:].tolist()
+        started = time.perf_counter()
         if any(token in self.eos for token in generated):
             return self.eos  # Finished rows may be visited while others continue.
-        return self.prefixes[batch_id].token_enforcer.get_allowed_tokens(generated).allowed_tokens
+        result = self.prefixes[batch_id].token_enforcer.get_allowed_tokens(generated).allowed_tokens
+        self.cpu_seconds += time.perf_counter() - started
+        return result
 
 
 class HFBatchEngine:
@@ -72,6 +85,8 @@ class HFBatchEngine:
         self.stats = Counter()
 
     def generate(self, requests):
+        self.stats["cohorts"] += 1
+        self.stats["generation_requests"] += len(requests)
         prepared = []
         for index, request in enumerate(requests):
             messages, prompt, allowed = self.local.fit_messages(request.system, request.payload)
@@ -83,7 +98,11 @@ class HFBatchEngine:
                              "prompt": prompt, "allowed": allowed,
                              "requested": requested, "budget": budget})
         results = [None] * len(requests)
-        for chunk in pack(prepared, self.batch_size, self.token_cap):
+        chunks = list(pack(prepared, self.batch_size, self.token_cap))
+        groups = len({item["budget"] for item in prepared})
+        self.stats["budget_groups"] += groups
+        self.stats["packing_extra_batches"] += max(0, len(chunks) - groups)
+        for chunk in chunks:
             for index, response in self._run(chunk):
                 results[index] = response
         return results
@@ -130,6 +149,7 @@ class HFBatchEngine:
         }
         device_type = torch.device(local.device).type
         local.model.eval()
+        started = time.perf_counter()
         with torch.no_grad(), torch.autocast(device_type, dtype=local.dtype, enabled=device_type == "cuda"):
             output = local.model.generate(
                 input_ids=torch.tensor(ids, device=local.device),
@@ -137,9 +157,13 @@ class HFBatchEngine:
             )
         self.stats["generation_batches"] += 1
         self.stats[f"batch_size_{len(chunk)}"] += 1
+        self.stats["padded_prompt_tokens"] += width * len(chunk)
+        self.stats["prompt_tokens"] += sum(len(item["prompt"]) for item in chunk)
+        self.stats["prefix_cpu_seconds"] += options["prefix_allowed_tokens_fn"].cpu_seconds
         results = []
         for item, tokens in zip(chunk, output[:, width:].tolist()):
             completion = trim_eos(tokens, eos)
+            self.stats["completion_tokens"] += len(completion)
             response = {
                 "raw": local.tokenizer.decode(completion, skip_special_tokens=True).strip(),
                 "prompt_ids": item["prompt"], "completion_ids": completion,
@@ -152,6 +176,7 @@ class HFBatchEngine:
                 "documents": json.loads(item["messages"][1]["content"]).get("documents", []),
             }
             results.append((item["index"], response))
+        self.stats["generate_wall_seconds"] += time.perf_counter() - started
         return results
 
 
@@ -209,6 +234,66 @@ class Broker:
         self.thread.join()
 
 
+class PlannerFirstPipeline(Pipeline):
+    """For always-plan policies, defer the unused initial answer until after retrieval.
+
+    PLAN receives only question/documents, never an answer. Thus intermediate
+    answers in the original always-plan loop are discarded, not planner inputs.
+    Other policies delegate unchanged. A separate cache key records this variant.
+    """
+
+    def initial(self, row):
+        if (self.cfg.get("retrieval_plan_trigger", "unknown") != "always"
+                or self.cfg.get("retrieval_plan_rounds", 0) == 0):
+            self.execution_strategy = "original"
+            return super().initial(row)
+        self.execution_strategy = "plan_before_answer_v1"
+        row = public(row)
+        key = fingerprint([self.signature, row, self.execution_strategy])
+        cache = self.cache_dir / (key + ".json")
+        if cache.exists():
+            return read_json(cache), True
+        started, calls_before = time.perf_counter(), self.calls
+        docs = self.retriever.retrieve(row["question"], row["ctxs"])
+        retrieval_seconds = time.perf_counter() - started
+        plans, queries_seen = [], set()
+        for _ in range(self.cfg["retrieval_plan_rounds"]):
+            response = self.qwen.generate(
+                PLAN, self.payload(row, docs, task="retrieval_plan"), max_new_tokens=256
+            )
+            self.calls += 1
+            plan = {"raw": response["raw"], "documents": response.get("documents", docs)}
+            plans.append(plan)
+            try:
+                queries = json_object(response["raw"]).get("retrieval_queries")
+                if (not isinstance(queries, list) or len(queries) > 3
+                        or any(not isinstance(q, str) or not q.strip() or len(q) > 180 for q in queries)):
+                    raise InvalidOutput("Invalid retrieval_queries")
+            except InvalidOutput as error:
+                plan["error"] = str(error)
+                break
+            fresh = [q.strip() for q in queries if q.strip() not in queries_seen]
+            queries_seen.update(fresh)
+            plan["queries"] = fresh
+            if not fresh:
+                break
+            retrieval_started = time.perf_counter()
+            docs = self.retriever.retrieve(row["question"], row["ctxs"], extra_queries=fresh, previous=docs)
+            retrieval_seconds += time.perf_counter() - retrieval_started
+        answer, raw, repairs, visible = self.answer(self.payload(row, docs))
+        initial = {
+            "answer": answer, "documents": docs, "raw": raw, "format_retries": repairs,
+            "prompt_documents": visible, "retrieval_seconds": retrieval_seconds,
+            "generation_seconds": time.perf_counter() - started - retrieval_seconds,
+            "initial_calls": self.calls - calls_before, "retrieval_plans": plans,
+            "input_context_count": len(row["ctxs"]), "selected_document_count": len(docs),
+            "visible_document_count": len(visible), "cache_key": key,
+            "execution_strategy": self.execution_strategy,
+        }
+        save_json(cache, initial)
+        return initial, False
+
+
 class SharedBatchPipeline:
     """Independent RAG controllers/retrievers share one Qwen broker, ordered output."""
 
@@ -228,9 +313,7 @@ class SharedBatchPipeline:
         pipeline = None
         try:
             if self.pipeline_factory is None:
-                from autodl_rag.pipeline import Pipeline
-
-                pipeline = Pipeline(self.cfg, mode="rag", qwen=self.broker)
+                pipeline = PlannerFirstPipeline(self.cfg, mode="rag", qwen=self.broker)
             else:
                 pipeline = self.pipeline_factory(self.cfg, self.broker)
             if self.cache_dir is not None:
@@ -250,6 +333,7 @@ class SharedBatchPipeline:
                     try:
                         trace = pipeline.run(row)
                         trace["execution_backend"] = "hf_shared_batch"
+                        trace["execution_strategy"] = getattr(pipeline, "execution_strategy", "original")
                     except Exception as error:
                         future.set_exception(error)
                     else:

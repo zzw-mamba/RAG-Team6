@@ -178,6 +178,7 @@ def validate(cfg, folder, batch_size, token_cap, size):
 
 
 def predict(cfg, source, output, batch_size, token_cap):
+    identity = backend_identity(cfg, batch_size, token_cap)
     pipeline = SharedBatchPipeline(cfg, source, batch_size, token_cap)
     status = "failed"
     started = time.perf_counter()
@@ -198,7 +199,7 @@ def predict(cfg, source, output, batch_size, token_cap):
             "startup_seconds": pipeline.startup_seconds, "processing_seconds": processing,
             "seconds_per_new_row": processing / pipeline.completed if pipeline.completed else None,
             "total_wall_seconds": time.perf_counter() - started, "generation_stats": stats,
-            "backend_identity": backend_identity(cfg, batch_size, token_cap),
+            "backend_identity": identity,
         })
 
 
@@ -206,8 +207,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True)
     parser.add_argument("--name", default="score-v2")
-    parser.add_argument("--batch-size", type=int, choices=(1, 2, 4, 8), default=4)
-    parser.add_argument("--max-batch-tokens", type=int, default=32768)
+    parser.add_argument("--batch-size", type=int, choices=(1, 2, 4, 8), default=8)
+    parser.add_argument("--max-batch-tokens", type=int, default=147456)
     parser.add_argument("--benchmark", type=int, default=0, metavar="N")
     parser.add_argument("--stop-existing", action="store_true")
     args = parser.parse_args()
