@@ -14,6 +14,8 @@
 
 普通 RAG 还可使用包外 scripts/batched_qwen.py：一份冻结 Qwen 由单个生成线程持有，多条 Pipeline/检索线程通过 broker 合并生成请求。每行独立 JSON/引用/EOS 状态，左 padding，按预算/长度分组，父控制器仍顺序保存。scripts/score_predict_batch.py 先在目标 GPU 做独立缓存的顺序/批量配对 pilot，EM 不降且测得更快才允许生产；模型、脚本与依赖版本变化需重测。仅适用于确定性 Qwen RAG，不修改训练分布或批判停止语义，详见[批量推理](../autodl/BATCHED_INFERENCE.md)。
 
+可选 vLLM 服务端使用独立环境和一份 BF16 Qwen，客户端沿用相同证据预算发送 token IDs 与逐题 JSON Schema，通过本机 completions API 连续调度。客户端不加载 GPU 权重；其 load_in_4bit=false/backend/deployment 配置与原 NF4 输出隔离，试跑对照真实 HF 报告后才允许独立完整提交，不能混用不同精度预测。部署、HTTP 协议和验证范围见 [vLLM 说明](../autodl/VLLM_INFERENCE.md)。
+
 与原框架的主要区别是：批判JSON使用`action=stop/revise`；修正时允许定向补检索；候选通过Qwen顺序互换验证后接受；强化学习按最多两轮完整轨迹计算奖励。`max_rounds`配置限制批判循环次数，对应停止原因`max_revisions`，与`critic_stop`、`invalid_critique`、`invalid_revision`、`change_rejected`分别记录。已有有效终答会在批判格式失败后保留，该失败不计作正确自主停止。
 
 原框架和AutoDL模块使用不同运行目录与结果格式，不直接混合评分。AutoDL的CPU/微型模型测试不替代目标GPU的真实pilot验证。
