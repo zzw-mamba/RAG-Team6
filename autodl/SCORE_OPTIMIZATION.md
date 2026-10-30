@@ -49,6 +49,32 @@ bash run_score_v2.sh predict /root/autodl-fs/zzw/configs/new-server.json
 
 也可用 `all` 顺序执行三个阶段，通过检查后才预测。中断后重跑同一阶段，签名一致时续跑；修改代码/配置后改用 `SCORE_RUN_NAME=score-v2-new`，不能复用旧签名结果。
 
+### 全量预测并行提速
+
+`run_score_v2.sh` 的 predict 阶段默认使用两个独立 Qwen worker，不在父进程多加载一个 Qwen；tune/confirmation 保持原有逻辑。`SCORE_WORKERS=1` 可恢复顺序运行，96GB 显存环境可以先测 `SCORE_WORKERS=4`。并行可能改变浮点执行细节，不保证逐字相同输出，也不预先承诺速度倍率。
+
+本次提速仅修改包外调度脚本，推理包源码、配置、模型和输出签名不变，已完成的 tune/confirmation 和 test 前缀可继续使用；不会因为换 worker 数而强制重跑。父进程顺序写出，子进程仅接收公开字段。
+
+在前两个阶段已完成后，先用下一批 32 道未完成问题进行独立测速：
+
+```bash
+python scripts/score_predict_fast.py --config /root/autodl-fs/zzw/configs/new-server.json \
+  --workers 2 --benchmark 32 --stop-sequential
+```
+
+`--stop-sequential` 仅终止相同配置与实验名下旧的 optimize/predict 进程，不终止 tune、confirmation、训练或其他项目。若已有另一并行任务占用同一实验锁，会报错，不强制停止。
+测速不写生产 test.jsonl，使用独立空缓存，防止把前一次 benchmark 的缓存命中当成加速；每次都从同一生产进度之后取样。完整记录在 `optimization/score-v2/benchmarks/workers-*/runtime.json`，包括模型启动时间、每题秒数、每小时题数和预计剩余小时。小样本 ETA 仅作估算。
+
+比较 2/4 workers 后再后台续跑：
+
+```bash
+nohup python -u scripts/score_predict_fast.py \
+  --config /root/autodl-fs/zzw/configs/new-server.json --workers 2 \
+  > /root/autodl-fs/zzw/logs/score-v2-parallel.log 2>&1 < /dev/null &
+```
+
+保持代码、配置和模型不变时，沿用原本 `<selected>/test.jsonl` 的已完成前缀并自动导出同一 test.csv。初答缓存可复用，但 benchmark 的隔离缓存不混入生产测速记录。没有目标 GPU 的真实吞吐测试，不能据此宣称 2 倍或 4 倍加速。
+
 最终提交是 `work_dir/optimization/score-v2/<selected>/test.csv`，由原有 exporter 按官方模板顺序完整校验导出。它是优化后的 **普通 RAG**，不应标成 RL 成绩。
 先恢复可信的普通 RAG 基线，再用相同新配置、相同初答与相同 confirmation 样本，对原始 critic 和旧 RL adapter 做配对比较；旧 adapter 的训练分布不同，收益需要重新验证，不能直接承诺。
 

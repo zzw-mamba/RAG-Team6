@@ -28,8 +28,16 @@ export HF_HOME="$STORAGE/cache/huggingface"
 export TORCH_HOME="$STORAGE/cache/torch"
 if [[ "$STAGE" == all ]]; then
   for PART in tune confirmation predict; do
-    "$RAG_PYTHON" -u -m autodl_rag.optimize --config "$CONFIG" --stage "$PART" --name "${SCORE_RUN_NAME:-score-v2}"
+    if [[ "$PART" == predict && "${SCORE_WORKERS:-2}" != 1 ]]; then
+      "$RAG_PYTHON" -u scripts/score_predict_fast.py --config "$CONFIG" --name "${SCORE_RUN_NAME:-score-v2}" --workers "${SCORE_WORKERS:-2}"
+    else
+      "$RAG_PYTHON" -u -m autodl_rag.optimize --config "$CONFIG" --stage "$PART" --name "${SCORE_RUN_NAME:-score-v2}"
+    fi
   done
 else
-  exec "$RAG_PYTHON" -u -m autodl_rag.optimize --config "$CONFIG" --stage "$STAGE" --name "${SCORE_RUN_NAME:-score-v2}"
+  if [[ "$STAGE" == predict && "${SCORE_WORKERS:-2}" != 1 ]]; then
+    exec "$RAG_PYTHON" -u scripts/score_predict_fast.py --config "$CONFIG" --name "${SCORE_RUN_NAME:-score-v2}" --workers "${SCORE_WORKERS:-2}"
+  else
+    exec "$RAG_PYTHON" -u -m autodl_rag.optimize --config "$CONFIG" --stage "$STAGE" --name "${SCORE_RUN_NAME:-score-v2}"
+  fi
 fi
