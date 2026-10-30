@@ -51,6 +51,8 @@ bash run_score_v2.sh predict /root/autodl-fs/zzw/configs/new-server.json
 
 ### 全量预测并行提速
 
+需要只加载一份 Qwen 权重时，使用 [单模型批量入口](BATCHED_INFERENCE.md)，先通过真实配对 pilot 后再续跑；下面保留多进程方案用于对照。
+
 `run_score_v2.sh` 的 predict 阶段默认使用两个独立 Qwen worker，不在父进程多加载一个 Qwen；tune/confirmation 保持原有逻辑。`SCORE_WORKERS=1` 可恢复顺序运行，96GB 显存环境可以先测 `SCORE_WORKERS=4`。并行可能改变浮点执行细节，不保证逐字相同输出，也不预先承诺速度倍率。
 
 本次提速仅修改包外调度脚本，推理包源码、配置、模型和输出签名不变，已完成的 tune/confirmation 和 test 前缀可继续使用；不会因为换 worker 数而强制重跑。父进程顺序写出，子进程仅接收公开字段。
