@@ -8,6 +8,8 @@
 
 ## AutoDL 实际训练入口
 
+**Kaggle 低分排查与新版基线**：见 [证据覆盖、模型知识补全与定向查询对照](autodl/SCORE_OPTIMIZATION.md)。新增入口先在 tune 比较四组真实 Qwen 配置，再用独立 confirmation 检查，避免在没有验证收益时重跑全部测试集。新策略的官方得分尚待实测，不承诺达到 0.5。
+
 **AutoDL.Art Qwen2.5 镜像用户**：兼容版本在 `feat/autodl-qwen-image` 分支，支持复用 PyTorch 2.2.1 / CUDA 11.8，不下载升级 Torch/CUDA。切换该分支后，在 `autodl/` 执行 `bash run_qwen_image.sh`；完整命令和路径见 [镜像运行说明](autodl/README.md#直接使用-autodlart-qwen25-镜像pytorch-221--cuda-118)。
 
 单卡48GB及以上环境使用 [autodl/](autodl/README.md)，包含本地双模型加载、全局补检索、最多两轮批判修正、真实LoRA轨迹GRPO训练、检查点选择、三组对照和提交CSV导出。默认使用以下服务器路径：

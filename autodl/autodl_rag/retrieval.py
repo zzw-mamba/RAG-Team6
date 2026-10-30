@@ -140,6 +140,8 @@ class Retriever:
         return [dict(zip(("id", "title", "text"), r)) for r in rows]
 
     def retrieve(self, question, contexts, extra_queries=(), previous=()):
+        if self.cfg.get("retrieval_policy", "legacy") == "coverage":
+            return self.coverage(question, contexts, extra_queries, previous)
         # Keep provided contexts in the candidate set; global retrieval supplies missing hops.
         pool = {}
         for d in [*contexts, *previous, *self.search(question)]:
@@ -180,5 +182,58 @@ class Retriever:
                     self.cfg["document_chars"],
                 ),
             }
+            for d in chosen
+        ]
+
+    def focused_search(self, query):
+        """Keep an exact-entity/conjunctive channel alongside broad FTS recall."""
+        k = self.cfg["global_top_k"]
+        words = list(dict.fromkeys(tokens(query)))[:12]
+        rows = []
+        if words and k > 0:
+            expression = " AND ".join('"' + w + '"' for w in words)
+            rows = self.db.execute(
+                "SELECT d.id,d.title,d.text FROM search JOIN docs d ON d.rowid=search.rowid "
+                "WHERE search MATCH ? ORDER BY bm25(search,3.0,1.0) LIMIT ?",
+                (expression, k),
+            ).fetchall()
+        specific = [dict(zip(("id", "title", "text"), r)) for r in rows]
+        return list({d["id"]: d for d in [*specific, *self.search(query, k)]}.values())
+
+    def coverage(self, question, contexts, extra_queries=(), previous=()):
+        # Every supplied passage gets priority. Additional queries keep their own
+        # rankings: a second-hop biography need not repeat the original film title.
+        chosen, seen = [], set()
+        cap = self.cfg["max_documents"]
+
+        def add(d):
+            if d["id"] not in seen and len(chosen) < cap:
+                seen.add(d["id"])
+                chosen.append(d)
+
+        for d in contexts:
+            add(d)
+        queries = list(dict.fromkeys([*extra_queries, question]))
+        channels = [self.focused_search(q) for q in queries]
+        if self.reranker:
+            for i, (q, docs) in enumerate(zip(queries, channels)):
+                scores = self.reranker.score(q, docs)
+                channels[i] = [d for _, d in sorted(zip(scores, docs), key=lambda x: -x[0])]
+        title_counts = Counter(d["title"].casefold() for d in chosen)
+        for rank in range(max(map(len, channels), default=0)):
+            for channel in channels:
+                if rank < len(channel):
+                    d = channel[rank]
+                    title = d["title"].casefold()
+                    if d["id"] not in seen and title_counts[title] < 3 and len(chosen) < cap:
+                        add(d)
+                        title_counts[title] += 1
+        for d in previous:
+            add(d)
+        return [
+            {**d, "text": focus_text(
+                d["text"], question + " " + " ".join(extra_queries),
+                self.cfg["document_chars"],
+            )}
             for d in chosen
         ]

@@ -4,6 +4,15 @@ from __future__ import annotations
 
 
 def qwen_schema(payload, allowed):
+    if payload.get("task") == "retrieval_plan":
+        return {
+            "type": "object",
+            "properties": {"retrieval_queries": {
+                "type": "array", "minItems": 0, "maxItems": 3,
+                "items": {"type": "string", "minLength": 1, "maxLength": 180},
+            }},
+            "required": ["retrieval_queries"], "additionalProperties": False,
+        }
     citations = {
         "type": "array",
         "minItems": 0,

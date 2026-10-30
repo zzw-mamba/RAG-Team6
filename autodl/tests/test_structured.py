@@ -28,6 +28,14 @@ def accepted(text, schema):
 
 
 class StructuredTests(unittest.TestCase):
+    @unittest.skipUnless(HAS_JSON, "Optional JSON decoder required")
+    def test_planner_decoder_accepts_queries_and_rejects_answers_or_excess_queries(self):
+        schema = qwen_schema({"task": "retrieval_plan"}, {"d1"})
+        self.assertTrue(accepted('{"retrieval_queries":["Intermediate Person mother"]}', schema))
+        self.assertTrue(accepted('{"retrieval_queries":[]}', schema))
+        self.assertFalse(accepted('{"answer":"Synthetic Person"}', schema))
+        self.assertFalse(accepted('{"retrieval_queries":["a","b","c","d"]}', schema))
+
     def check_unicode_filter(self, tokenizer):
         import torch
 

@@ -255,6 +255,13 @@ def load_config(path):
             raise ValueError(f"Missing config: {k}")
     defaults = read_json(Path(__file__).parent / "defaults.json")
     cfg = {**defaults, **cfg}
+    if cfg.get("retrieval_policy", "legacy") not in ("legacy", "coverage"):
+        raise ValueError("retrieval_policy must be legacy or coverage")
+    rounds = cfg.get("retrieval_plan_rounds", 0)
+    if type(rounds) is not int or not 0 <= rounds <= 2:
+        raise ValueError("retrieval_plan_rounds must be an integer from 0 to 2")
+    if cfg.get("retrieval_plan_trigger", "unknown") not in ("unknown", "always"):
+        raise ValueError("retrieval_plan_trigger must be unknown or always")
     for k in (
         "max_input_tokens",
         "max_rounds",
