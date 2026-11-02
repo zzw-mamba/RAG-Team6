@@ -13,6 +13,20 @@ from .pipeline import Pipeline, source_identity
 
 
 def profiles(base):
+    if base.get("optimization_suite") == "score-v4":
+        incumbent = {**base, "retrieval_policy": "coverage", "retrieval_plan_rounds": 1,
+                     "retrieval_plan_trigger": "always", "max_input_tokens": 16384,
+                     "max_documents": 32, "document_chars": 4000, "global_top_k": 8,
+                     "answer_tokens": 384, "allow_model_knowledge": True,
+                     "answer_order": "answer_first", "reranker_path": None}
+        hybrid = {**incumbent, "retrieval_policy": "hybrid", "max_documents": 20,
+                  "global_top_k": 24, "answer_order": "evidence_first", "answer_tokens": 512}
+        # In v4, baseline means the actual v2 planned incumbent, not legacy.
+        result = {"baseline": incumbent, "hybrid_reasoned": hybrid}
+        if base.get("reranker_path"):
+            result["hybrid_bge"] = {**hybrid, "reranker_path": base["reranker_path"],
+                                    "rerank_candidates": 48}
+        return result
     if base.get("optimization_suite") == "score-v3":
         local = {**base, "retrieval_policy": "provided", "retrieval_plan_rounds": 0,
                  "answer_order": "evidence_first", "allow_model_knowledge": False,
@@ -174,11 +188,15 @@ def run_stage(args, base, folder):
         print(f"Tune selected: {choose(results)}; report: {folder / 'selection.json'}", flush=True)
     elif args.stage == "confirmation":
         selected = selection["selected"]
+        passed = results[selected]["normalized_em"] >= max(
+            results[n]["normalized_em"] for n in ("baseline", "incumbent") if n in results
+        )
+        if base.get("optimization_suite") == "score-v4":
+            passed = passed and (results[selected]["by_type"].get("entity", {}).get("normalized_em", 0)
+                                 >= results["baseline"]["by_type"].get("entity", {}).get("normalized_em", 0))
         save_json(folder / "confirmation.json", {
             "selection_sha256": digest_file(folder / "selection.json"),
-            "passed": results[selected]["normalized_em"] >= max(
-                results[n]["normalized_em"] for n in ("baseline", "incumbent") if n in results
-            ),
+            "passed": passed,
             "results": results,
             "note": "Policy is frozen by tune. Confirmation is a regression check, not another model selection step. Local EM is not Kaggle accuracy.",
         })

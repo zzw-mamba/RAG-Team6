@@ -110,7 +110,7 @@ def focus_text(text, query, limit):
 
 
 class Retriever:
-    def __init__(self, cfg):
+    def __init__(self, cfg, reranker=None):
         self.cfg = cfg
         db = Path(cfg["work_dir"]) / "corpus.sqlite"
         if not db.exists() or not db.with_suffix(".manifest.json").exists():
@@ -120,8 +120,8 @@ class Retriever:
         ] != fingerprint(read_json(prepared(cfg) / "manifest.json")):
             raise ValueError("Index does not match prepared data")
         self.db = sqlite3.connect(db.as_uri() + "?mode=ro", uri=True)
-        self.reranker = None
-        if cfg.get("reranker_path"):
+        self.reranker = reranker
+        if self.reranker is None and cfg.get("reranker_path"):
             from .models import Reranker
 
             self.reranker = Reranker(cfg)
@@ -139,7 +139,23 @@ class Retriever:
         ).fetchall()
         return [dict(zip(("id", "title", "text"), r)) for r in rows]
 
+    def title_search(self, query):
+        words = list(dict.fromkeys(tokens(query)))[:16]
+        if not words or self.cfg["global_top_k"] <= 0:
+            return []
+        expression = 'title : (' + ' AND '.join('"' + w + '"' for w in words) + ')'
+        rows = self.db.execute(
+            "SELECT d.id,d.title,d.text FROM search JOIN docs d ON d.rowid=search.rowid "
+            "WHERE search MATCH ? ORDER BY bm25(search,3.0,1.0) LIMIT ?",
+            (expression, self.cfg["global_top_k"]),
+        ).fetchall()
+        return [dict(zip(("id", "title", "text"), row)) for row in rows]
+
     def retrieve(self, question, contexts, extra_queries=(), previous=()):
+        if self.cfg.get("retrieval_policy") == "hybrid":
+            from .hybrid import retrieve
+
+            return retrieve(self, question, contexts, extra_queries, previous)
         if self.cfg.get("retrieval_policy") == "provided":
             # Preserve question-local bridge passages; never add corpus distractors.
             # Keep every local passage; fit_messages performs the actual token budgeting.

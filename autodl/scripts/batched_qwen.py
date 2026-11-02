@@ -298,11 +298,12 @@ class SharedBatchPipeline:
     """Independent RAG controllers/retrievers share one Qwen broker, ordered output."""
 
     def __init__(self, cfg, source, batch_size=4, token_cap=32768, local=None,
-                 pipeline_factory=None, engine_factory=HFBatchEngine, cache_dir=None):
+                 pipeline_factory=None, engine_factory=HFBatchEngine, cache_dir=None, reranker=None):
         self.cfg, self.source = cfg, source
         self.batch_size, self.token_cap = batch_size, token_cap
         self.local, self.pipeline_factory, self.engine_factory = local, pipeline_factory, engine_factory
         self.cache_dir = cache_dir
+        self.reranker = reranker
         self.pending = deque()
         self.tasks, self.ready = queue.Queue(), queue.Queue()
         self.threads = []
@@ -313,7 +314,8 @@ class SharedBatchPipeline:
         pipeline = None
         try:
             if self.pipeline_factory is None:
-                pipeline = PlannerFirstPipeline(self.cfg, mode="rag", qwen=self.broker)
+                pipeline = PlannerFirstPipeline(self.cfg, mode="rag", qwen=self.broker,
+                                                reranker=self.reranker)
             else:
                 pipeline = self.pipeline_factory(self.cfg, self.broker)
             if self.cache_dir is not None:
@@ -367,6 +369,10 @@ class SharedBatchPipeline:
 
                 seed_everything(self.cfg["seed"])
                 self.local = LocalModel(self.cfg, "qwen")
+            if self.reranker is None and self.cfg.get("reranker_path"):
+                from autodl_rag.models import Reranker
+
+                self.reranker = Reranker(self.cfg)
             self.broker = Broker(self.engine_factory(self.local, self.batch_size, self.token_cap))
             for _ in range(self.batch_size):
                 thread = threading.Thread(target=self._worker, name="rag-controller", daemon=True)

@@ -41,6 +41,7 @@ def backend_identity(cfg, batch_size, token_cap):
     return {
         "config": fingerprint(cfg), "inference_source": source_identity(),
         "model": model_identity(cfg["qwen_path"]),
+        "reranker": model_identity(cfg["reranker_path"]) if cfg.get("reranker_path") else None,
         "batch_size": batch_size, "token_cap": token_cap,
         "gpu": gpu,
         "backend_files": {name: digest_file(Path(__file__).with_name(name))
@@ -114,15 +115,20 @@ def validate(cfg, folder, batch_size, token_cap, size):
     memory = {}
     metrics = {}
     answers = {}
+    reranker = None
+    if cfg.get("reranker_path"):
+        from autodl_rag.models import Reranker
+
+        reranker = Reranker(cfg)
     for mode in ("sequential", "batch"):
         output = dest / f"{mode}.jsonl"
         if mode == "sequential":
-            pipeline = Pipeline(cfg, mode="rag", qwen=local)
+            pipeline = Pipeline(cfg, mode="rag", qwen=local, reranker=reranker)
             pipeline.cache_dir = dest / "sequential-cache"
             pipeline.cache_dir.mkdir()
         else:
             pipeline = SharedBatchPipeline(cfg, source, batch_size, token_cap, local=local,
-                                           cache_dir=dest / "batch-cache")
+                                           cache_dir=dest / "batch-cache", reranker=reranker)
         import torch
 
         cuda = str(local.device).startswith("cuda")
@@ -219,8 +225,6 @@ def main():
     base = load_config(args.config)
     folder = Path(base["work_dir"]) / "optimization" / args.name
     cfg, output = selected_config(base, folder)
-    if cfg.get("reranker_path"):
-        parser.error("Shared Qwen batching currently requires reranker_path=null; it will not silently disable a configured reranker")
     if args.stop_existing:
         if not sys.platform.startswith("linux"):
             parser.error("--stop-existing requires Linux /proc")

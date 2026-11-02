@@ -321,8 +321,11 @@ class LocalModel:
 
 class Reranker:
     def __init__(self, cfg):
+        import threading
+
         from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
+        self.lock = threading.Lock()
         self.device = cfg["reranker_device"]
         path = resolve_model(cfg["reranker_path"])
         self.tokenizer = AutoTokenizer.from_pretrained(path, local_files_only=True)
@@ -339,7 +342,7 @@ class Reranker:
         import torch
 
         result = []
-        with torch.no_grad():
+        with self.lock, torch.no_grad():
             for start in range(0, len(docs), 4):
                 pairs = [
                     (question, d["title"] + "\n" + d["text"])

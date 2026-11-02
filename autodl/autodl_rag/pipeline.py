@@ -69,11 +69,11 @@ def source_identity():
 
 
 class Pipeline:
-    def __init__(self, cfg, mode="rag", adapter=None, qwen=None, critic=None):
+    def __init__(self, cfg, mode="rag", adapter=None, qwen=None, critic=None, reranker=None):
         from .models import LocalModel
 
         self.cfg, self.mode = cfg, mode
-        self.retriever = Retriever(cfg)
+        self.retriever = Retriever(cfg, reranker=reranker)
         self.qwen = qwen if qwen is not None else LocalModel(cfg, "qwen")
         self.critic = critic
         if mode != "rag" and critic is None:
