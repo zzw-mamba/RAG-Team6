@@ -13,6 +13,17 @@ from .pipeline import Pipeline, source_identity
 
 
 def profiles(base):
+    if base.get("optimization_suite") == "score-v3":
+        local = {**base, "retrieval_policy": "provided", "retrieval_plan_rounds": 0,
+                 "answer_order": "evidence_first", "allow_model_knowledge": False,
+                 "max_input_tokens": 16384, "answer_tokens": 512}
+        return {
+            "baseline": {**base, "retrieval_policy": "legacy", "retrieval_plan_rounds": 0,
+                         "allow_model_knowledge": False, "answer_order": "answer_first"},
+            "local_direct": {**local, "answer_order": "answer_first"},
+            "local_reasoned": local,
+            "local_knowledge": {**local, "allow_model_knowledge": True},
+        }
     coverage = {
         **base,
         "retrieval_policy": "coverage",

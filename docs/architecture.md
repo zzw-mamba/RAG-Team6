@@ -90,3 +90,5 @@ class ChatBackend(Protocol):
 - Demo 负责人：当前为离线回放；增加新问题实时输入时仍使用同一 public-only 推理入口。
 
 新增方法另加配置与结果，不覆盖基线。公共契约变化要同步数据、训练、评测和 Demo 使用方。
+
+score-v3 是显式 optimization_suite 选项：provided 策略只使用当前题公开 ctxs，不补全局库，不按 max_documents 丢弃第二跳。实际 token 预算仍由 fit_messages 执行；evidence_first 将有界 explanation 放在 answer 前，并同时调整提示、payload 和 JSON schema 强制字段顺序。仅验证后才可主张收益，源码签名变化使旧预测无法在新版下续写。

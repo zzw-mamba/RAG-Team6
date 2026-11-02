@@ -140,6 +140,10 @@ class Retriever:
         return [dict(zip(("id", "title", "text"), r)) for r in rows]
 
     def retrieve(self, question, contexts, extra_queries=(), previous=()):
+        if self.cfg.get("retrieval_policy") == "provided":
+            # Preserve question-local bridge passages; never add corpus distractors.
+            # Keep every local passage; fit_messages performs the actual token budgeting.
+            return [dict(d) for d in contexts]
         if self.cfg.get("retrieval_policy", "legacy") == "coverage":
             return self.coverage(question, contexts, extra_queries, previous)
         # Keep provided contexts in the candidate set; global retrieval supplies missing hops.

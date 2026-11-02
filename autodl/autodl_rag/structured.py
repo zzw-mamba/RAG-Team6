@@ -31,6 +31,8 @@ def qwen_schema(payload, allowed):
             "evidence_ids": citations,
             "explanation": {"type": "string", "minLength": 1, "maxLength": 320},
         }
+    if "answer" in fields and payload.get("answer_order") == "evidence_first":
+        fields = {key: fields[key] for key in ("explanation", "answer", "evidence_ids")}
     return {
         "type": "object",
         "properties": fields,
