@@ -20,6 +20,11 @@ def profiles(base):
         return {
             "baseline": {**base, "retrieval_policy": "legacy", "retrieval_plan_rounds": 0,
                          "allow_model_knowledge": False, "answer_order": "answer_first"},
+            "incumbent": {**base, "retrieval_policy": "coverage", "retrieval_plan_rounds": 1,
+                          "retrieval_plan_trigger": "always", "max_input_tokens": 16384,
+                          "max_documents": 32, "document_chars": 4000, "global_top_k": 8,
+                          "answer_tokens": 384, "allow_model_knowledge": True,
+                          "answer_order": "answer_first"},
             "local_direct": {**local, "answer_order": "answer_first"},
             "local_reasoned": local,
             "local_knowledge": {**local, "allow_model_knowledge": True},
@@ -119,7 +124,8 @@ def run_stage(args, base, folder):
     if args.stage == "tune":
         names = list(configs)
     elif args.stage == "confirmation":
-        names = list(dict.fromkeys(["baseline", selection["selected"]]))
+        names = list(dict.fromkeys(["baseline", *(["incumbent"] if "incumbent" in configs else []),
+                                    selection["selected"]]))
     else:
         confirmation = read_json(folder / "confirmation.json")
         if confirmation["selection_sha256"] != digest_file(folder / "selection.json"):
@@ -170,7 +176,9 @@ def run_stage(args, base, folder):
         selected = selection["selected"]
         save_json(folder / "confirmation.json", {
             "selection_sha256": digest_file(folder / "selection.json"),
-            "passed": results[selected]["normalized_em"] >= results["baseline"]["normalized_em"],
+            "passed": results[selected]["normalized_em"] >= max(
+                results[n]["normalized_em"] for n in ("baseline", "incumbent") if n in results
+            ),
             "results": results,
             "note": "Policy is frozen by tune. Confirmation is a regression check, not another model selection step. Local EM is not Kaggle accuracy.",
         })

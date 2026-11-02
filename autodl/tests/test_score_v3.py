@@ -29,7 +29,7 @@ class ScoreV3Tests(unittest.TestCase):
 
     def test_suite_ablation_keeps_reasoning_and_retrieval_effects_separate(self):
         suite = profiles({'optimization_suite': 'score-v3'})
-        self.assertEqual(set(suite), {'baseline', 'local_direct', 'local_reasoned', 'local_knowledge'})
+        self.assertEqual(set(suite), {'baseline', 'incumbent', 'local_direct', 'local_reasoned', 'local_knowledge'})
         a, b = suite['local_direct'], suite['local_reasoned']
         self.assertEqual({k: v for k, v in a.items() if k != 'answer_order'},
                          {k: v for k, v in b.items() if k != 'answer_order'})
@@ -37,3 +37,25 @@ class ScoreV3Tests(unittest.TestCase):
         self.assertNotIn('prior knowledge', answer_prompt(b))
         self.assertIn('prior knowledge', answer_prompt(suite['local_knowledge']))
         self.assertEqual(b['retrieval_plan_rounds'], 0)
+
+    def test_offline_audit_distinguishes_retrieval_loss_from_answer_errors(self):
+        import json
+        import tempfile
+        from pathlib import Path
+
+        from scripts.audit_score_evidence import audit
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            folder = root / 'prepared'
+            folder.mkdir()
+            (folder / 'manifest.json').write_text('{}')
+            local = [{'id': 'd', 'title': 'Person', 'text': 'Born in Synthetic Harbor.'}]
+            (folder / 'confirmation.jsonl').write_text(json.dumps(
+                {'id': '1', 'question': 'Where?', 'answers': ['Synthetic Harbor'], 'ctxs': local}) + '\n')
+            trace = root / 'trace.jsonl'
+            trace.write_text(json.dumps({'id': '1', 'initial_documents': [],
+                                         'final': {'answer': 'unknown'}}) + '\n')
+            result = audit({'work_dir': temp}, trace, 'confirmation')
+            self.assertEqual(result['counts']['local_gold_lost'], 1)
+            self.assertEqual(result['counts']['gold_in_full_local'], 1)
+            self.assertEqual(result['counts']['wrong_despite_visible_gold'], 0)
