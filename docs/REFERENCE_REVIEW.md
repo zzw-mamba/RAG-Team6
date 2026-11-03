@@ -2,6 +2,8 @@
 
 阅读日期：2026-11-03。阅读了 README 和相关源代码，没有安装或运行第三方仓库。
 
+后续评分修订：当前项目 `answer-metrics-v2` 为避免 `unknown` 中的 `no` 误命中，已对短语边界与类别答案增加检查；该指标不再与参考仓库原始字符子串 acc 完全相同。原算法值仅以 `legacy_substring_accuracy` 留作追溯。
+
 固定阅读版本：
 
 - RAG-ReasonAlignment：`11ab28179d6cbd0d0c4cb491a6fd3e1b1c53536a`。

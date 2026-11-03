@@ -6,6 +6,7 @@
 - [经典 baseline 设计依据](docs/BASELINE_DESIGN.md)
 - [课程参考仓库分析](docs/REFERENCE_REVIEW.md)
 - [使用 train 验证效果](docs/TRAIN_VALIDATION.md)
+- [拒答与评分排查](docs/ABSTENTION_DIAGNOSTICS.md)
 - [新版验证范围](docs/NAIVE_BASELINE_VALIDATION.md)
 
 ## 服务器模型
@@ -54,6 +55,10 @@ naive-rag run --input examples/toy.json --config configs/autodl_baseline.json --
 ```
 
 服务器 BM25 对照使用 `configs/autodl_baseline_bm25.json`，已写入相同的本地 Qwen 路径。通用配置 `configs/baseline_bm25.json` 仍使用 Hugging Face 模型名。EM/F1 是本地诊断指标，不代表已复现 Kaggle Accuracy。尚未在目标服务器执行真实 7B 推理。
+
+## 评分与拒答排查
+
+`answer-metrics-v2` 修复了旧字符子串指标会把 `unknown` 中的 `no` 误记正确的问题。严格 EM 不受该漏洞影响，旧子串值仅保留为 `legacy_substring_accuracy`。可用 `report` 重算已有完整日志，无需重新推理；新版报告增加拒答数、文档线索与截断诊断。新增 `autodl_baseline_best_supported.json` 作为单次回答提示词对照，原配置仍使用旧提示。具体命令见 [拒答与评分排查](docs/ABSTENTION_DIAGNOSTICS.md)。
 
 ## 上一代代码说明
 

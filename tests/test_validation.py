@@ -123,6 +123,40 @@ class ValidationTests(unittest.TestCase):
         self.assertGreater(low, 0.95)
         self.assertAlmostEqual(high, 1)
 
+    def test_abstention_report_separates_legacy_false_hits(self):
+        with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(io.StringIO()):
+            root = Path(tmp)
+            source = root / "dev.json"
+            row = make_row(1)
+            row["answers"] = ["no"]
+            row["ctxs"] = [{"title": "Unrelated", "text": "The result is unknown."}]
+            source.write_text(json.dumps([row]))
+            evaluate(argparse.Namespace(input=str(source), output=str(root / "run"),
+                                        config=None, resume=False, dry_run=True))
+            trace_path = root / "run/traces.jsonl"
+            trace = list(records(trace_path))[0]
+            trace["final_answer"] = "unknown"
+            # Older complete runs have no version fields or legacy score column.
+            trace.pop("prompt_version", None)
+            trace["metrics"].pop("legacy_substring_accuracy", None)
+            trace_path.write_text(json.dumps(trace) + "\n")
+            manifest_path = root / "run/manifest.json"
+            manifest = json.loads(manifest_path.read_text())
+            manifest.pop("metric_version", None)
+            manifest.pop("prompt_version", None)
+            manifest["identity"]["config"].pop("prompt_mode", None)
+            manifest_path.write_text(json.dumps(manifest))
+            report(argparse.Namespace(input=str(source), run_dir=str(root / "run"), output=str(root / "rescored")))
+            summary = json.loads((root / "rescored/summary.json").read_text())
+            self.assertEqual(summary["unknown_count"], 1)
+            self.assertEqual(summary["answered_count"], 0)
+            self.assertIsNone(summary["answered_normalized_em"])
+            self.assertEqual(summary["substring_accuracy"], 0)
+            self.assertEqual(summary["legacy_substring_accuracy"], 1)
+            self.assertEqual(summary["legacy_substring_false_positive_count"], 1)
+            self.assertEqual(summary["candidate_gold_phrase_rate"], 0)
+            self.assertEqual(summary["by_answer_kind"]["yes_no"]["unknown_rate"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

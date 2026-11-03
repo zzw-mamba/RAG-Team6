@@ -73,6 +73,8 @@ naive-rag report --input data/evaluation-v1/dev.jsonl --run-dir outputs/validati
 
 归一化 EM 忽略英文大小写、标点、冠词和空格差异，多答案取最大值；F1 测量词重叠。子串命中率是较宽松的参考值。这些都不是已验证的 Kaggle Accuracy。
 
+`answer-metrics-v2` 中的 `substring_accuracy` 已改为词边界短语匹配，并要求 yes/no 等类别答案完整一致；旧的字符子串算法会误将 `unknown` 中的 `no` 计分，只保留为 `legacy_substring_accuracy` 追溯。报告同时给出拒答数量、候选与实际输入的短语出现率、截断题数。高拒答排查与无需重新推理的旧日志重评分命令见 [拒答与评分排查](ABSTENTION_DIAGNOSTICS.md)。
+
 Wilson 区间只描述当前样本下 EM 的抽样不确定性，不覆盖数据关联、模型记忆、选择偏差或调参影响。调参集分数带有选参偏差，最终以独立 holdout 确认结果为准。
 
 默认批大小为 1，适合比较逐题延迟。计时包含检索与提示构建、GPU 生成，不含权重加载和日志写入，未排除首次推理预热；较大 batch 的计时为分摊值，不是单请求延迟。建议先用同一 pilot 预热并记录运行顺序，必要时在相同硬件状态下复测，避免把热机差异解释成方法提升。

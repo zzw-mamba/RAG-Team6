@@ -6,10 +6,11 @@ import heapq
 import json
 import math
 import statistics
+from collections import Counter
 from pathlib import Path
 
 from .data import fingerprint, gold_answers, normalize, records
-from .metrics import normalize_answer, scores
+from .metrics import METRIC_VERSION, normalize_answer, phrase_present, scores
 
 
 def write_json(path, value):
@@ -93,8 +94,8 @@ def prepare_eval(args):
 
 
 def contains_answer(answers, documents):
-    text = normalize_answer(" ".join(d.get("title", "") + " " + d["text"] for d in documents))
-    return any(normalize_answer(a) and normalize_answer(a) in text for a in answers)
+    text = " ".join(d.get("title", "") + " " + d["text"] for d in documents)
+    return any(phrase_present(a, text) for a in answers)
 
 
 def percentile(values, fraction):
@@ -162,6 +163,8 @@ def report(args):
         kind = raw.get("type") if isinstance(raw.get("type"), str) else "unspecified"
         row = {"id": rid, "question": sample["question"], "answers": answers,
                "prediction": trace["final_answer"], "type": kind, **metric,
+               "answer_kind": "yes_no" if any(normalize_answer(a) in {"yes", "no"} for a in answers) else "other",
+               "input_tokens": trace.get("input_tokens"),
                "pipeline_seconds_amortized": trace["timing"]["pipeline_seconds_amortized"],
                "unknown": normalize_answer(trace["final_answer"]) in {"unknown", "noanswer"},
                "candidate_gold_string_present": candidate_hit,
@@ -177,14 +180,29 @@ def report(args):
         raise ValueError("Extra predictions outside evaluation input")
     count = len(rows)
     times = [r["pipeline_seconds_amortized"] for r in rows]
+    answered = [r for r in rows if not r["unknown"]]
+    input_lengths = [r["input_tokens"] for r in rows if r["input_tokens"] is not None]
     summary = {"samples": count, "backend": backend, "dry_run": backend == "dry-run",
+               "metric_version": METRIC_VERSION,
                "input_sha256": identity["input_sha256"], "config": identity["config"],
                "traces_sha256": fingerprint(directory / "traces.jsonl"),
                "metric_note": "Local metrics, not verified Kaggle Accuracy; dry-run scores/timing have no research meaning.",
                **{key: statistics.mean(r[key] for r in rows)
-                  for key in ("raw_em", "normalized_em", "token_f1", "substring_accuracy")},
+                  for key in ("raw_em", "normalized_em", "token_f1", "substring_accuracy", "legacy_substring_accuracy")},
+               "legacy_substring_false_positive_count": sum(r["legacy_substring_accuracy"] > r["substring_accuracy"] for r in rows),
                "normalized_em_wilson_95_interval": wilson_interval(sum(r["normalized_em"] for r in rows), count),
                "unknown_rate": statistics.mean(r["unknown"] for r in rows),
+               "unknown_count": sum(r["unknown"] for r in rows),
+               "answered_count": len(answered),
+               "answered_normalized_em": statistics.mean(r["normalized_em"] for r in answered) if answered else None,
+               "unknown_with_gold_phrase_in_prompt_count": sum(r["unknown"] and r["prompt_gold_string_present"] for r in rows),
+               "candidate_gold_phrase_rate": statistics.mean(r["candidate_gold_string_present"] for r in rows),
+               "selected_gold_phrase_rate": statistics.mean(r["selected_gold_string_present"] for r in rows),
+               "prompt_gold_phrase_rate": statistics.mean(r["prompt_gold_string_present"] for r in rows),
+               "truncated_sample_count": sum(r["truncated_documents"] > 0 for r in rows),
+               "mean_input_tokens": statistics.mean(input_lengths) if input_lengths else None,
+               "max_input_tokens": max(input_lengths) if input_lengths else None,
+               "diagnostic_counts": dict(Counter(flag for r in rows for flag in r["diagnostic_flags"])),
                "mean_pipeline_seconds_amortized": statistics.mean(times),
                "p50_pipeline_seconds_amortized": percentile(times, 0.5),
                "p95_pipeline_seconds_amortized": percentile(times, 0.95),
@@ -192,12 +210,17 @@ def report(args):
                "average_revision_count": 0,
                "timing_note": "Excludes model loading and file IO; batch_size>1 values are amortized, not request latency. No warm-up excluded.",
                "diagnostic_note": "Gold-string presence is not evidence-chain completeness or causal error attribution, especially for yes/no.",
-               "by_type": {}}
+               "by_type": {}, "by_answer_kind": {}}
     for kind in sorted({r["type"] for r in rows}):
         group = [r for r in rows if r["type"] == kind]
         summary["by_type"][kind] = {"samples": len(group),
                                     "normalized_em": statistics.mean(r["normalized_em"] for r in group),
                                     "token_f1": statistics.mean(r["token_f1"] for r in group)}
+    for kind in sorted({r["answer_kind"] for r in rows}):
+        group = [r for r in rows if r["answer_kind"] == kind]
+        summary["by_answer_kind"][kind] = {"samples": len(group),
+                                           "normalized_em": statistics.mean(r["normalized_em"] for r in group),
+                                           "unknown_rate": statistics.mean(r["unknown"] for r in group)}
     output.mkdir(parents=True)
     write_json(output / "summary.json", summary)
     write_json(output / "cases.json", examples)
@@ -215,9 +238,17 @@ def report(args):
             + f"| Normalized EM | {summary['normalized_em']:.2%} |\n"
             + f"| Token F1 | {summary['token_f1']:.2%} |\n"
             + f"| Raw EM | {summary['raw_em']:.2%} |\n"
-            + f"| 子串命中率（宽松） | {summary['substring_accuracy']:.2%} |\n"
+            + f"| 答案短语命中率（边界与类别检查） | {summary['substring_accuracy']:.2%} |\n"
+            + f"| 旧版子串值（可能虚高，仅用于追溯） | {summary['legacy_substring_accuracy']:.2%} |\n"
+            + f"| 旧版子串误命中题数 | {summary['legacy_substring_false_positive_count']} |\n"
             + f"| EM Wilson 95% 区间 | {ci[0]:.2%}–{ci[1]:.2%} |\n"
             + f"| unknown 比例 | {summary['unknown_rate']:.2%} |\n"
+            + f"| unknown 题数 | {summary['unknown_count']} |\n"
+            + f"| 非拒答题数 | {summary['answered_count']} |\n"
+            + f"| 候选文档含答案短语的比例 | {summary['candidate_gold_phrase_rate']:.2%} |\n"
+            + f"| 模型输入含答案短语的比例 | {summary['prompt_gold_phrase_rate']:.2%} |\n"
+            + f"| unknown 且输入含答案短语的题数 | {summary['unknown_with_gold_phrase_in_prompt_count']} |\n"
+            + f"| 有文档被截断的题数 | {summary['truncated_sample_count']} |\n"
             + f"| 平均耗时（秒/题） | {statistics.mean(times):.3f} |\n"
             + f"| P95 耗时（秒/题） | {percentile(times, .95):.3f} |\n\n"
             + "以上为本地指标，尚未确认与 Kaggle Accuracy 的匹配公式一致。\n\n"

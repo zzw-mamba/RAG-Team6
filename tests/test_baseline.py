@@ -9,7 +9,7 @@ from pathlib import Path
 
 from naive_rag.cli import run, submission
 from naive_rag.data import normalize, records, validation_group
-from naive_rag.generation import HuggingFace, messages
+from naive_rag.generation import PROMPT_VERSIONS, DryRun, HuggingFace, messages
 from naive_rag.metrics import scores
 from naive_rag.retrieval import retrieve
 
@@ -69,6 +69,45 @@ class BaselineTests(unittest.TestCase):
         self.assertEqual(scores("The Willow Bay", ["other", "Willow Bay"])["normalized_em"], 1)
         self.assertAlmostEqual(scores("Willow", ["Willow Bay"])["token_f1"], 2 / 3)
         self.assertEqual(scores("no", ["yes"])["normalized_em"], 0)
+
+    def test_unknown_is_not_a_correct_no_answer(self):
+        for gold in ("no", "known"):
+            result = scores("unknown", [gold])
+            self.assertEqual(result["substring_accuracy"], 0)
+            self.assertEqual(result["normalized_em"], 0)
+            self.assertEqual(result["legacy_substring_accuracy"], 1)
+        self.assertEqual(scores("yes and no", ["no"])["substring_accuracy"], 0)
+        self.assertEqual(scores("nobody", ["no"])["substring_accuracy"], 0)
+        self.assertEqual(scores("No.", ["no"])["substring_accuracy"], 1)
+
+    def test_prompt_ablation_is_explicit_and_remains_label_free(self):
+        docs = [{"title": "Film", "text": "Directed by an intermediate person."}]
+        direct = messages("Where?", docs)
+        alternative = messages("Where?", docs, "best_supported")
+        self.assertNotEqual(direct[0]["content"], alternative[0]["content"])
+        self.assertEqual(direct[1]["content"], alternative[1]["content"])
+        packed, _, _ = DryRun({"prompt_mode": "best_supported"}).pack("Where?", docs, 6000)
+        self.assertEqual(packed, alternative)
+        self.assertNotEqual(PROMPT_VERSIONS["direct"], PROMPT_VERSIONS["best_supported"])
+        with self.assertRaises(ValueError):
+            messages("Where?", docs, "invalid")
+
+    def test_alternative_prompt_version_is_recorded_without_model_loading(self):
+        with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(io.StringIO()):
+            root = Path(tmp)
+            config = root / "config.json"
+            config.write_text(json.dumps({"prompt_mode": "best_supported"}))
+            source = root / "input.json"
+            source.write_text(json.dumps([{"question": "Where?", "answers": ["City"],
+                                           "ctxs": [{"text": "A person lives in City."}]}]))
+            run(argparse.Namespace(input=str(source), output=str(root / "run"), config=str(config),
+                                   limit=None, dry_run=True, resume=False))
+            manifest = json.loads((root / "run/manifest.json").read_text())
+            trace = list(records(root / "run/traces.jsonl"))[0]
+            self.assertEqual(manifest["prompt_version"], "best-supported-v1")
+            self.assertEqual(trace["prompt_version"], "best-supported-v1")
+            self.assertEqual(manifest["metric_version"], "answer-metrics-v2")
+            self.assertEqual(trace["critic_calls"], 0)
 
     def test_pack_retains_bridge_and_question(self):
         class CharacterTokenizer:

@@ -10,8 +10,8 @@ import time
 from pathlib import Path
 
 from .data import fingerprint, gold_answers, normalize, records, validation_group
-from .generation import DryRun, HuggingFace, clean_answer
-from .metrics import scores
+from .generation import PROMPT_VERSIONS, DryRun, HuggingFace, clean_answer
+from .metrics import METRIC_VERSION, scores
 from .retrieval import retrieve
 
 DEFAULTS = {
@@ -19,6 +19,7 @@ DEFAULTS = {
     "top_k": 10, "batch_size": 1, "max_input_tokens": 6144,
     "max_new_tokens": 64, "dtype": "bfloat16", "load_in_4bit": False,
     "retrieval_mode": "input",
+    "prompt_mode": "direct",
 }
 
 
@@ -44,9 +45,10 @@ def summarize(traces):
         "samples": len(rows), "labeled_samples": len(labeled),
         "backend": rows[0]["backend"] if rows else None,
         "diagnostic_only": True,
-        "metric_note": "Local EM/F1 and substring_accuracy (FlashRAG-style acc); Kaggle matching rules are unverified. Dry-run scores are meaningless.",
+        "metric_version": METRIC_VERSION,
+        "metric_note": "Local EM/F1 and boundary-aware containment; legacy_substring_accuracy can count 'no' inside 'unknown'. Kaggle matching rules are unverified. Dry-run scores are meaningless.",
         **{k: statistics.mean(r["metrics"][k] for r in labeled) if labeled else None
-           for k in ("raw_em", "normalized_em", "token_f1", "substring_accuracy")},
+           for k in ("raw_em", "normalized_em", "token_f1", "substring_accuracy", "legacy_substring_accuracy")},
         "average_revision_count": 0,
         "average_pipeline_seconds_amortized": statistics.mean(times) if times else None,
         "timing_note": "Excludes model loading; generation time divided by actual batch size. Use batch_size=1 for latency comparison.",
@@ -66,6 +68,8 @@ def run(args):
         raise ValueError("backend must be hf or dry-run")
     if config["retrieval_mode"] not in ("bm25", "input"):
         raise ValueError("retrieval_mode must be bm25 or input")
+    if config["prompt_mode"] not in PROMPT_VERSIONS:
+        raise ValueError("prompt_mode must be direct or best_supported")
     for k in ("top_k", "batch_size", "max_input_tokens", "max_new_tokens"):
         if not isinstance(config[k], int) or config[k] <= 0:
             raise ValueError(f"{k} must be a positive integer")
@@ -93,7 +97,8 @@ def run(args):
                 versions[package] = importlib.metadata.version(package)
             except importlib.metadata.PackageNotFoundError:
                 pass
-        dump(manifest_path, {"identity": identity, "python": platform.python_version(), "packages": versions})
+        dump(manifest_path, {"identity": identity, "python": platform.python_version(), "packages": versions,
+                             "prompt_version": PROMPT_VERSIONS[config["prompt_mode"]], "metric_version": METRIC_VERSION})
     trace_path = out / "traces.jsonl"
     done = read_traces(trace_path)
     generator = None
@@ -116,6 +121,7 @@ def run(args):
                     raise ValueError(f"Empty model response for {row['id']}; no submission generated")
                 trace = {
                     "id": row["id"], "question": row["question"], "backend": config["backend"],
+                    "prompt_version": PROMPT_VERSIONS[config["prompt_mode"]],
                     "retrieved_documents": docs, "messages": prompt, "input_tokens": count,
                     "raw_output": answer, "initial_answer": final, "final_answer": final,
                     "revision_count": 0, "stop_reason": "single_pass", "critic_calls": 0,
@@ -143,7 +149,7 @@ def run(args):
                 continue
             gold = gold_answers(original)
             if generator is None:
-                generator = DryRun() if config["backend"] == "dry-run" else HuggingFace(config)
+                generator = DryRun(config) if config["backend"] == "dry-run" else HuggingFace(config)
             before = time.perf_counter()
             docs = retrieve(row["question"], row["ctxs"], config["top_k"], config["retrieval_mode"])
             prompt, packed, count = generator.pack(row["question"], docs, config["max_input_tokens"])

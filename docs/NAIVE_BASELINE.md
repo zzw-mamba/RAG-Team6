@@ -37,7 +37,9 @@ flowchart LR
 
 评测层报告原始 EM、英文风格归一化 EM、多参考答案取最大值的 token F1、修正次数和推理时间。**这些不是已经复现的 Kaggle Accuracy**；精确匹配规则仍需竞赛评分代码或教师说明。没有证据标签时不报告虚构的 Recall@K。
 
-另提供 `substring_accuracy`，用于与参考仓库中宽松的 `acc` 口径对照：归一化后的标准答案是否出现在模型答案中。它与严格 EM 分开记录，也不等于 Kaggle Accuracy。F1 对 `yes/no/noanswer` 采用类别答案精确一致检查，避免给相互矛盾的扩展文本部分分。
+另提供 `substring_accuracy`，检查归一化后的答案短语是否按完整词边界出现，yes/no 等类别要求完整一致。它与严格 EM 分开记录，也不等于 Kaggle Accuracy。F1 对 `yes/no/noanswer` 采用类别答案精确一致检查，避免给相互矛盾的扩展文本部分分。
+
+评分版本 `answer-metrics-v2` 已修复 `unknown` 中的 `no` 误命中：当前 `substring_accuracy` 检查完整词边界与类别一致性，旧算法只保留为 `legacy_substring_accuracy`。重评分旧日志、排查大量拒答及新提示对照，见 [拒答与评分排查](ABSTENTION_DIAGNOSTICS.md)。旧提示与配置保留，新提示使用 `configs/autodl_baseline_best_supported.json`，仍只生成一次。
 
 ## 文件结构
 
