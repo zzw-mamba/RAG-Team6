@@ -13,6 +13,18 @@ from .pipeline import Pipeline, source_identity
 
 
 def profiles(base):
+    if base.get("optimization_suite") == "score-v5":
+        v4 = profiles({**base, "optimization_suite": "score-v4"})
+        # Preserve v5 in each frozen configuration, so identities remain explicit.
+        result = {"baseline": {**v4["baseline"], "optimization_suite": "score-v5"},
+                  "hybrid_direct": {**v4["hybrid_reasoned"], "optimization_suite": "score-v5",
+                                    "answer_order": "answer_first"},
+                  "routed_reasoned": {**v4["hybrid_reasoned"], "optimization_suite": "score-v5",
+                                      "question_router": True}}
+        if "hybrid_bge" in v4:
+            result["routed_bge"] = {**v4["hybrid_bge"], "optimization_suite": "score-v5",
+                                    "question_router": True}
+        return result
     if base.get("optimization_suite") == "score-v4":
         incumbent = {**base, "retrieval_policy": "coverage", "retrieval_plan_rounds": 1,
                      "retrieval_plan_trigger": "always", "max_input_tokens": 16384,
@@ -191,7 +203,7 @@ def run_stage(args, base, folder):
         passed = results[selected]["normalized_em"] >= max(
             results[n]["normalized_em"] for n in ("baseline", "incumbent") if n in results
         )
-        if base.get("optimization_suite") == "score-v4":
+        if base.get("optimization_suite") in ("score-v4", "score-v5"):
             passed = passed and (results[selected]["by_type"].get("entity", {}).get("normalized_em", 0)
                                  >= results["baseline"]["by_type"].get("entity", {}).get("normalized_em", 0))
         save_json(folder / "confirmation.json", {

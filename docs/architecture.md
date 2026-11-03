@@ -94,3 +94,5 @@ class ChatBackend(Protocol):
 score-v3 是显式 optimization_suite 选项：provided 策略只使用当前题公开 ctxs，不补全局库，不按 max_documents 丢弃第二跳。实际 token 预算仍由 fit_messages 执行；evidence_first 将有界 explanation 放在 answer 前，并同时调整提示、payload 和 JSON schema 强制字段顺序。仅验证后才可主张收益，源码签名变化使旧预测无法在新版下续写。
 
 score-v4 保留全局库，以原 v2 planned 为 baseline；hybrid 将标题字段 AND 检索、实体标题查询、词法排名和可选交叉编码器排名按 RRF 融合。每个规划查询保持独立排名并预留名额，同标题最多两片；保留四个局部候选后交错关系通道，实际预算仍由 tokenizer 执行。BGE 在批量控制器间共享且加锁，pilot 与生产签名包含重排模型身份；无本地权重时仅显式词法对照。confirmation 同时要求总体与实体 EM 不低于 planned。
+
+score-v5 将 question_router 作为冻结候选选项：只按问题开头的助动词识别判断题，恢复旧 planned 的 coverage/answer-first/384-token 和禁用 BGE；其余用 hybrid/evidence-first。路由在每个控制器自己的 cfg/检索对象上执行，finally 恢复，不改共享 Qwen 的 cfg；预算均16384。缓存签名含路由和有效配置；轨迹记录 question_route。该规则是启发式，必须测误分及新题效果，禁止读标签或按答题对错选路线。

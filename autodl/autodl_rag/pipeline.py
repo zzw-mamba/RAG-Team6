@@ -289,6 +289,28 @@ class Pipeline:
         return True, logs
 
     def run(self, row, sample=False, initial=None):
+        if not self.cfg.get("question_router"):
+            return self._run(row, sample=sample, initial=initial)
+        from .routing import route_config
+
+        if self.mode != "rag" or initial is not None:
+            raise ValueError("Question routing requires a fresh rag initial; no critic/shared initial")
+        row = public(row)
+        effective, route = route_config(self.cfg, row["question"])
+        original = (self.cfg, self.retriever.cfg, self.retriever.reranker, self.signature)
+        try:
+            self.cfg = effective
+            self.retriever.cfg = effective
+            if route == "boolean_legacy":
+                self.retriever.reranker = None
+            self.signature = fingerprint([original[3], "question_router_v1", route, effective])
+            trace = self._run(row, sample=sample)
+            trace["question_route"] = route
+            return trace
+        finally:
+            self.cfg, self.retriever.cfg, self.retriever.reranker, self.signature = original
+
+    def _run(self, row, sample=False, initial=None):
         row = public(row)
         start = time.perf_counter()
         calls_before = self.calls
