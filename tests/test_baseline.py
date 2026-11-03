@@ -6,6 +6,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from naive_rag.cli import run, submission
 from naive_rag.data import normalize, records, validation_group
@@ -187,6 +188,30 @@ class BaselineTests(unittest.TestCase):
             template.write_text("id,answer\n1,\n3,\n")
             with self.assertRaises(ValueError):
                 submission(args)
+
+    def test_batch_alignment_final_partial_batch_and_resume(self):
+        with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(io.StringIO()):
+            root = Path(tmp)
+            source, config = root / "input.json", root / "config.json"
+            source.write_text(json.dumps([{"id": i, "question": f"Q{i}",
+                                           "answers": [f"answer-Q{i}"], "ctxs": [{"text": "Evidence"}]}
+                                          for i in range(10)]))
+            config.write_text(json.dumps({"batch_size": 8}))
+            args = argparse.Namespace(input=str(source), output=str(root / "run"), config=str(config),
+                                      limit=None, dry_run=True, resume=False)
+            with patch("naive_rag.cli.DryRun") as constructor:
+                backend = constructor.return_value
+                backend.pack.side_effect = lambda question, docs, budget: (question, docs, None)
+                backend.generate.side_effect = lambda prompts: [f"answer-{q}" for q in prompts]
+                run(args)
+                self.assertEqual([len(c.args[0]) for c in backend.generate.call_args_list], [8, 2])
+                args.resume = True
+                run(args)
+                self.assertEqual(backend.generate.call_count, 2)
+            traces = list(records(root / "run/traces.jsonl"))
+            self.assertEqual([r["id"] for r in traces], [str(i) for i in range(10)])
+            self.assertEqual([r["final_answer"] for r in traces], [f"answer-Q{i}" for i in range(10)])
+            self.assertEqual([r["timing"]["batch_size"] for r in traces], [8] * 8 + [2] * 2)
 
 
 if __name__ == "__main__":

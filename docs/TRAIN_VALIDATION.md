@@ -88,3 +88,20 @@ Wilson 区间只描述当前样本下 EM 的抽样不确定性，不覆盖数据
 输出含参考答案，仅用于本地评估；不会传入模型提示，不会作为比赛提交或自动上传 Git。正式测试集继续用 `run` 与 `submission`，无答案的测试文件会被 `evaluate` 在推理前拒绝。
 
 无模型环境可用 `--dry-run` 验证评估流程，报告会醒目标注 DRY-RUN；其分数、区间、耗时都不构成模型效果。
+
+## 全量推理的批量配置
+
+`configs/autodl_baseline_best_supported_batch8.json` 将批大小改为 8，其余参数与 best-supported 主配置相同。原批大小 1 用于逐题延迟对比；批大小 8 是提高吞吐的试运行起点，尚未在目标 RTX PRO 6000 上验证显存和速度。先在同一 pilot 上检查：
+
+```bash
+python -m naive_rag.cli evaluate --input data/evaluation-v1/pilot.jsonl --config configs/autodl_baseline_best_supported_batch8.json --output outputs/validation-v1/pilot-best-supported-batch8
+```
+
+观察实际显存和完成时间后再决定是否增至 16；若显存不足则降为 4 或 2。批量变化可能因填充与浮点计算引起少量答案变化，不能保证与逐题输出完全一致。正式效果比较时记录批大小，必要时在固定 dev 上复核。批量报告中的耗时为每批分摊值，不能直接解释为单请求延迟。
+
+切换批大小必须使用新的输出目录，不能用 batch 8 配置续跑 batch 1 的日志。若旧任务仍在同一卡上运行，应先结束旧任务，再启动新配置。全量测试和导出示例：
+
+```bash
+python -u -m naive_rag.cli run --input /root/autodl-fs/zzw/data/test.json --config configs/autodl_baseline_best_supported_batch8.json --output outputs/naive-rag-full-test-batch8 && \
+python -m naive_rag.cli submission --traces outputs/naive-rag-full-test-batch8/traces.jsonl --template /root/autodl-fs/zzw/data/sample_submission.csv --output outputs/submission-naive-rag-batch8.csv
+```
