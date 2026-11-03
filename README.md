@@ -7,6 +7,7 @@
 - [课程参考仓库分析](docs/REFERENCE_REVIEW.md)
 - [使用 train 验证效果](docs/TRAIN_VALIDATION.md)
 - [拒答与评分排查](docs/ABSTENTION_DIAGNOSTICS.md)
+- [朴素 RAG 提分实验](docs/OPTIMIZE_NAIVE_RAG.md)
 - [新版验证范围](docs/NAIVE_BASELINE_VALIDATION.md)
 
 ## 服务器模型
@@ -63,6 +64,10 @@ naive-rag run --input examples/toy.json --config configs/autodl_baseline.json --
 ## 评分与拒答排查
 
 `answer-metrics-v2` 修复了旧字符子串指标会把 `unknown` 中的 `no` 误记正确的问题。严格 EM 不受该漏洞影响，旧子串值仅保留为 `legacy_substring_accuracy`。可用 `report` 重算已有完整日志，无需重新推理；新版报告增加拒答数、文档线索与截断诊断。新增 `autodl_baseline_best_supported.json` 作为单次回答提示词对照，原配置仍使用旧提示。具体命令见 [拒答与评分排查](docs/ABSTENTION_DIAGNOSTICS.md)。
+
+## 朴素 RAG 提分对照
+
+运行 `bash scripts/tune_naive_rag.sh`，在同一批固定 dev 上顺序比较当前 batch 16 基线、BM25 排序、一次生成的证据摘要与最终答案。结果写入 `outputs/naive-rag-tune-v1/comparison/`。所有方案均不加载批判模型；证据摘要仅存日志，CSV 只导出最终答案。新方案尚未验证真实收益，先用 pilot 检查，完整命令与研究边界见 [提分实验说明](docs/OPTIMIZE_NAIVE_RAG.md)。
 
 ## 上一代代码说明
 

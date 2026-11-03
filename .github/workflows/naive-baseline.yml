@@ -9,6 +9,9 @@ on:
       - 'tests/test_baseline.py'
       - 'tests/test_validation.py'
       - 'configs/*baseline*.json'
+      - 'configs/autodl_evidence_answer_batch16.json'
+      - 'configs/autodl_best_supported_bm25_batch16.json'
+      - 'scripts/tune_naive_rag.sh'
       - 'pyproject.toml'
       - '.github/workflows/naive-baseline.yml'
 
@@ -33,3 +36,7 @@ jobs:
         run: naive-rag run --input examples/toy.json --config configs/autodl_baseline.json --output outputs/ci-baseline-smoke --dry-run
       - name: Check labeled-data report without loading server weights
         run: naive-rag evaluate --input examples/toy.json --config configs/autodl_baseline.json --output outputs/ci-evaluation-smoke --dry-run
+      - name: Check optimization comparison and restart behavior without GPU
+        run: |
+          bash scripts/tune_naive_rag.sh examples/toy.json outputs/ci-tune-smoke --dry-run
+          bash scripts/tune_naive_rag.sh examples/toy.json outputs/ci-tune-smoke --dry-run

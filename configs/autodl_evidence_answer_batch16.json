@@ -1,0 +1,13 @@
+{
+  "backend": "hf",
+  "model": "/root/autodl-fs/zzw/models/Qwen2.5-7B-Instruct",
+  "seed": 42,
+  "top_k": 10,
+  "retrieval_mode": "input",
+  "prompt_mode": "evidence_answer",
+  "batch_size": 16,
+  "max_input_tokens": 6144,
+  "max_new_tokens": 256,
+  "dtype": "bfloat16",
+  "load_in_4bit": false
+}

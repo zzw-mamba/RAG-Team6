@@ -286,3 +286,74 @@ def evaluate(args):
         print((report_dir / "report.md").read_text())
         return
     report(Namespace(input=args.input, run_dir=args.output, output=str(report_dir)))
+
+
+def compare(args):
+    """Paired comparison: never infer gains from two different question samples."""
+    if len(args.reports) < 2:
+        raise ValueError("Provide at least two report directories, baseline first")
+    output = Path(args.output)
+    if output.exists():
+        raise FileExistsError("Use a new comparison output directory")
+    experiments = []
+    for location in args.reports:
+        path = Path(location)
+        summary = json.loads((path / "summary.json").read_text())
+        if not summary.get("metric_version"):
+            raise ValueError("Recompute legacy reports with the current report command first")
+        with (path / "per_question.csv").open(encoding="utf-8-sig", newline="") as f:
+            rows = list(csv.DictReader(f))
+        keyed = {r["id"]: r for r in rows}
+        if len(keyed) != len(rows) or len(rows) != summary["samples"]:
+            raise ValueError("Duplicate IDs or report count mismatch")
+        if abs(statistics.mean(float(r["normalized_em"]) for r in rows) - summary["normalized_em"]) > 1e-9:
+            raise ValueError("CSV scores differ from report summary")
+        experiments.append((path, summary, keyed))
+    base_path, baseline, base_rows = experiments[0]
+    comparison, changes = [], []
+    for path, summary, rows in experiments:
+        for key in ("input_sha256", "metric_version", "backend"):
+            if summary.get(key) != baseline.get(key):
+                raise ValueError(f"Cannot compare different {key}")
+        if set(rows) != set(base_rows):
+            raise ValueError("Cannot compare different question IDs")
+        fixed = regressed = 0
+        for rid, row in rows.items():
+            old = base_rows[rid]
+            if row["question"] != old["question"] or row["answers"] != old["answers"]:
+                raise ValueError("Question or gold answers differ between reports")
+            before, after = float(old["normalized_em"]), float(row["normalized_em"])
+            fixed += before == 0 and after == 1
+            regressed += before == 1 and after == 0
+            if before != after:
+                changes.append({"experiment": str(path.parent), "id": rid, "question": row["question"],
+                                "answers": row["answers"], "baseline_prediction": old["prediction"],
+                                "prediction": row["prediction"], "baseline_em": before, "em": after})
+        comparison.append({"report": str(path), "normalized_em": summary["normalized_em"],
+                           "token_f1": summary["token_f1"], "unknown_rate": summary["unknown_rate"],
+                           "mean_seconds": summary["mean_pipeline_seconds_amortized"],
+                           "net_correct_gain": fixed - regressed, "fixed": fixed, "regressed": regressed,
+                           "config": summary["config"]})
+    output.mkdir(parents=True)
+    write_json(output / "comparison.json", {"baseline_report": str(base_path),
+                                            "samples": baseline["samples"],
+                                            "dry_run": baseline["dry_run"], "experiments": comparison})
+    with (output / "paired_changes.csv").open("w", encoding="utf-8-sig", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["experiment", "id", "question", "answers",
+                                              "baseline_prediction", "prediction", "baseline_em", "em"])
+        writer.writeheader()
+        writer.writerows(changes)
+    lines = ["# 固定样本的逐题对照", "", f"样本数：{baseline['samples']}；基准：{base_path}", ""]
+    if baseline["dry_run"]:
+        lines += ["DRY-RUN：仅验证流程，不代表模型效果。", ""]
+    lines += ["| 运行 | EM | F1 | unknown | 秒/题 | 修正基准错题 | 原对现错 | 净增正确 |",
+              "|---|---:|---:|---:|---:|---:|---:|---:|"]
+    for row in comparison:
+        name = Path(row["report"]).parent.name.replace("|", "/")
+        lines.append(f"| {name} | {row['normalized_em']:.2%} | {row['token_f1']:.2%} | "
+                     f"{row['unknown_rate']:.2%} | {row['mean_seconds']:.3f} | {row['fixed']} | "
+                     f"{row['regressed']} | {row['net_correct_gain']} |")
+    lines += ["", "仅依据 dev 选择配置；不以测试集分数反复调参。批量时间为分摊值。", ""]
+    text = "\n".join(lines)
+    (output / "comparison.md").write_text(text, encoding="utf-8")
+    print(text)

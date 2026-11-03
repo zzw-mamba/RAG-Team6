@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from naive_rag.cli import run, submission
 from naive_rag.data import normalize, records, validation_group
-from naive_rag.generation import PROMPT_VERSIONS, DryRun, HuggingFace, messages
+from naive_rag.generation import PROMPT_VERSIONS, DryRun, HuggingFace, clean_answer, messages
 from naive_rag.metrics import scores
 from naive_rag.retrieval import retrieve
 
@@ -80,6 +80,37 @@ class BaselineTests(unittest.TestCase):
         self.assertEqual(scores("yes and no", ["no"])["substring_accuracy"], 0)
         self.assertEqual(scores("nobody", ["no"])["substring_accuracy"], 0)
         self.assertEqual(scores("No.", ["no"])["substring_accuracy"], 1)
+
+    def test_evidence_summary_is_not_exported_as_the_answer(self):
+        output = "Evidence: Document 1 identifies Mira; document 2 gives her city.\n<answer>Willow Bay</answer>"
+        self.assertEqual(clean_answer(output, "evidence_answer"), "Willow Bay")
+        self.assertEqual(clean_answer("<answer>unknown</answer>", "evidence_answer"), "unknown")
+        for malformed in ["Willow Bay", "<answer>unfinished", "<answer></answer>",
+                          "<answer>a</answer><answer>b</answer>", "<answer>a</answer><answer>"]:
+            with self.assertRaises(ValueError):
+                clean_answer(malformed, "evidence_answer")
+
+    def test_evidence_mode_keeps_one_generation_and_records_raw_summary(self):
+        with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(io.StringIO()):
+            root = Path(tmp)
+            config, source = root / "config.json", root / "input.json"
+            config.write_text(json.dumps({"prompt_mode": "evidence_answer", "max_new_tokens": 256}))
+            source.write_text(json.dumps([{"question": "Where?", "ctxs": [{"text": "Evidence."}]}]))
+            args = argparse.Namespace(input=str(source), output=str(root / "run"), config=str(config),
+                                      limit=None, dry_run=True, resume=False)
+            run(args)
+            trace = list(records(root / "run/traces.jsonl"))[0]
+            self.assertEqual(trace["final_answer"], "MOCK_ONLY")
+            self.assertIn("<answer>", trace["raw_output"])
+            self.assertEqual(trace["prompt_version"], "evidence-answer-v1")
+            self.assertEqual(trace["revision_count"], 0)
+            self.assertEqual(trace["critic_calls"], 0)
+            args.output = str(root / "bad-format")
+            with patch("naive_rag.cli.DryRun.generate", return_value=["Incomplete evidence summary"]):
+                with self.assertRaises(ValueError):
+                    run(args)
+            error = json.loads((root / "bad-format/generation_error.json").read_text())
+            self.assertEqual(error["raw_output"], "Incomplete evidence summary")
 
     def test_prompt_ablation_is_explicit_and_remains_label_free(self):
         docs = [{"title": "Film", "text": "Directed by an intermediate person."}]

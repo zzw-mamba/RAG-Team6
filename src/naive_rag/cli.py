@@ -69,7 +69,7 @@ def run(args):
     if config["retrieval_mode"] not in ("bm25", "input"):
         raise ValueError("retrieval_mode must be bm25 or input")
     if config["prompt_mode"] not in PROMPT_VERSIONS:
-        raise ValueError("prompt_mode must be direct or best_supported")
+        raise ValueError(f"Unknown prompt_mode: {config['prompt_mode']}")
     for k in ("top_k", "batch_size", "max_input_tokens", "max_new_tokens"):
         if not isinstance(config[k], int) or config[k] <= 0:
             raise ValueError(f"{k} must be a positive integer")
@@ -116,9 +116,14 @@ def run(args):
                 raise ValueError("Backend returned wrong number of answers")
             for item, answer in zip(pending, raw):
                 row, prompt, docs, count, prep_seconds, gold = item
-                final = clean_answer(answer)
-                if not final:
-                    raise ValueError(f"Empty model response for {row['id']}; no submission generated")
+                try:
+                    final = clean_answer(answer, config["prompt_mode"])
+                    if not final:
+                        raise ValueError("Empty final answer")
+                except ValueError as exc:
+                    dump(out / "generation_error.json", {"id": row["id"], "raw_output": answer,
+                                                          "error": str(exc)})
+                    raise ValueError(f"Invalid answer for {row['id']}; inspect {out / 'generation_error.json'}") from exc
                 trace = {
                     "id": row["id"], "question": row["question"], "backend": config["backend"],
                     "prompt_version": PROMPT_VERSIONS[config["prompt_mode"]],
@@ -220,7 +225,7 @@ def submission(args):
 
 
 def main():
-    from .validation import evaluate, prepare_eval, report
+    from .validation import compare, evaluate, prepare_eval, report
 
     parser = argparse.ArgumentParser(description="Qwen single-pass naive RAG baseline")
     sub = parser.add_subparsers(required=True)
@@ -262,6 +267,10 @@ def main():
     p.add_argument("--run-dir", required=True)
     p.add_argument("--output", required=True)
     p.set_defaults(func=report)
+    p = sub.add_parser("compare", help="Compare complete reports on identical dev questions")
+    p.add_argument("--reports", nargs="+", required=True, help="First report is the baseline")
+    p.add_argument("--output", required=True)
+    p.set_defaults(func=compare)
     args = parser.parse_args()
     args.func(args)
 

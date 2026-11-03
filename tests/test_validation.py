@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 from naive_rag.data import records
-from naive_rag.validation import evaluate, partition, prepare_eval, report, wilson_interval
+from naive_rag.validation import compare, evaluate, partition, prepare_eval, report, wilson_interval
 
 
 def make_row(i):
@@ -122,6 +122,47 @@ class ValidationTests(unittest.TestCase):
         low, high = wilson_interval(100, 100)
         self.assertGreater(low, 0.95)
         self.assertAlmostEqual(high, 1)
+
+    def test_paired_comparison_counts_fixes_and_rejects_different_inputs(self):
+        with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(io.StringIO()):
+            root = Path(tmp)
+            source = root / "dev.json"
+            source.write_text(json.dumps([make_row(1), make_row(2)]))
+            for name in ("baseline", "candidate"):
+                evaluate(argparse.Namespace(input=str(source), output=str(root / name),
+                                            config=None, resume=False, dry_run=True))
+            path = root / "candidate/traces.jsonl"
+            traces = list(records(path))
+            traces[0]["final_answer"] = "City 1"
+            path.write_text("".join(json.dumps(t) + "\n" for t in traces))
+            report(argparse.Namespace(input=str(source), run_dir=str(root / "candidate"), output=str(root / "candidate/rescored")))
+            args = argparse.Namespace(reports=[str(root / "baseline/report"), str(root / "candidate/rescored")],
+                                      output=str(root / "comparison"))
+            compare(args)
+            result = json.loads((root / "comparison/comparison.json").read_text())
+            self.assertEqual(result["experiments"][1]["fixed"], 1)
+            self.assertEqual(result["experiments"][1]["regressed"], 0)
+            self.assertEqual(result["experiments"][1]["net_correct_gain"], 1)
+            self.assertTrue(result["dry_run"])
+            base_trace_path = root / "baseline/traces.jsonl"
+            base_traces = list(records(base_trace_path))
+            base_traces[1]["final_answer"] = "City 2"
+            base_trace_path.write_text("".join(json.dumps(t) + "\n" for t in base_traces))
+            report(argparse.Namespace(input=str(source), run_dir=str(root / "baseline"), output=str(root / "baseline/rescored")))
+            args.reports[0] = str(root / "baseline/rescored")
+            args.output = str(root / "paired-tradeoff")
+            compare(args)
+            tradeoff = json.loads((root / "paired-tradeoff/comparison.json").read_text())["experiments"][1]
+            self.assertEqual(tradeoff["fixed"], 1)
+            self.assertEqual(tradeoff["regressed"], 1)
+            self.assertEqual(tradeoff["net_correct_gain"], 0)
+            summary_path = root / "candidate/rescored/summary.json"
+            summary = json.loads(summary_path.read_text())
+            summary["input_sha256"] = "different"
+            summary_path.write_text(json.dumps(summary))
+            args.output = str(root / "invalid-comparison")
+            with self.assertRaises(ValueError):
+                compare(args)
 
     def test_abstention_report_separates_legacy_false_hits(self):
         with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(io.StringIO()):
