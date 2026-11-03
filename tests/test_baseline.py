@@ -1,0 +1,154 @@
+import argparse
+import contextlib
+import csv
+import io
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+from naive_rag.cli import run, submission
+from naive_rag.data import normalize, records, validation_group
+from naive_rag.generation import HuggingFace, messages
+from naive_rag.metrics import scores
+from naive_rag.retrieval import retrieve
+
+
+class BaselineTests(unittest.TestCase):
+    def test_stream_large_object_and_unicode(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "data.json"
+            expected = [{"text": "汉字" * 40000}, {"text": "tail"}]
+            path.write_text(json.dumps(expected, ensure_ascii=False))
+            self.assertEqual(list(records(path)), expected)
+
+    def test_reject_corrupt_json(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "data.json"
+            for content in ('[{"a": 1},]', '[{"a": 1}', '[{}] garbage', '[{}, {}'):
+                path.write_text(content)
+                with self.assertRaises(ValueError):
+                    list(records(path))
+
+    def test_gold_and_rationale_cannot_enter_prompt(self):
+        row = {"question": "Where?", "answers": ["SECRET_GOLD"], "rationale": "SECRET_REASON",
+               "qa_pairs": "SECRET_PAIRS", "ctxs": [{"title": "Place", "text": "Evidence."}]}
+        sample = normalize(row, 0)
+        prompt = json.dumps(messages(sample["question"], retrieve(sample["question"], sample["ctxs"], 10)))
+        self.assertNotIn("SECRET", prompt)
+
+    def test_retrieval_and_duplicate_passages(self):
+        row = {"question": "Amber Bridge director?", "ctxs": [
+            {"text": "noise noise", "title": "Noise"},
+            {"text": "A film director", "title": "Amber Bridge"},
+            {"text": "A film director", "title": "Amber Bridge"}]}
+        sample = normalize(row, 1)
+        self.assertEqual(len(sample["ctxs"]), 2)
+        self.assertEqual(retrieve(sample["question"], sample["ctxs"], 1)[0]["title"], "Amber Bridge")
+
+    def test_group_split_is_stable(self):
+        self.assertEqual(validation_group(" Who is A?  ", 42, .1), validation_group("who is a?", 42, .1))
+
+    def test_precomputed_order_does_not_guess_score_direction(self):
+        docs = [{"title": "Noise", "text": "unrelated"}, {"title": "Target", "text": "relevant"}]
+        selected = retrieve("Target", docs, 1, mode="input")
+        self.assertEqual(selected[0]["title"], "Noise")
+        self.assertIsNone(selected[0]["bm25_score"])
+        with self.assertRaises(ValueError):
+            retrieve("Target", docs, 1, mode="invalid")
+
+    def test_substring_accuracy_is_separate_from_exact_match(self):
+        result = scores("It was Willow Bay", ["Willow Bay"])
+        self.assertEqual(result["substring_accuracy"], 1)
+        self.assertEqual(result["normalized_em"], 0)
+        self.assertEqual(scores("yes indeed", ["yes"])["token_f1"], 0)
+        self.assertEqual(scores("yes", ["yes"])["token_f1"], 1)
+        self.assertEqual(scores("something", [""])["substring_accuracy"], 0)
+
+    def test_metric_alias_and_overlap(self):
+        self.assertEqual(scores("The Willow Bay", ["other", "Willow Bay"])["normalized_em"], 1)
+        self.assertAlmostEqual(scores("Willow", ["Willow Bay"])["token_f1"], 2 / 3)
+        self.assertEqual(scores("no", ["yes"])["normalized_em"], 0)
+
+    def test_pack_retains_bridge_and_question(self):
+        class CharacterTokenizer:
+            def encode(self, text, **kwargs):
+                return list(text)
+            def decode(self, ids, **kwargs):
+                return "".join(ids)
+            def apply_chat_template(self, prompt, **kwargs):
+                return list(json.dumps(prompt))
+        backend = HuggingFace.__new__(HuggingFace)
+        backend.tokenizer = CharacterTokenizer()
+        docs = [{"title": "Film", "text": "a" * 1000}, {"title": "Bridge", "text": "b" * 1000}]
+        prompt, packed, count = backend.pack("Where?", docs, 950)
+        self.assertLessEqual(count, 950)
+        self.assertTrue(all(d["text"] for d in packed))
+        self.assertIn("Where?", prompt[1]["content"])
+
+    def test_pack_preserves_all_text_when_full_prompt_fits(self):
+        class CharacterTokenizer:
+            def encode(self, text, **kwargs):
+                return list(text)
+            def decode(self, ids, **kwargs):
+                return "".join(ids)
+            def apply_chat_template(self, prompt, **kwargs):
+                return list(json.dumps(prompt))
+        backend = HuggingFace.__new__(HuggingFace)
+        backend.tokenizer = CharacterTokenizer()
+        docs = [{"title": "Long", "text": "a" * 500}, {"title": "Short", "text": "b"}]
+        budget = len(backend.encode(messages("Where?", docs))) + 1
+        _, packed, count = backend.pack("Where?", docs, budget)
+        self.assertEqual([d["text"] for d in packed], [d["text"] for d in docs])
+        self.assertTrue(all(not d["truncated"] for d in packed))
+        self.assertLessEqual(count, budget)
+        base = len(backend.encode(messages("Where?", [{**d, "text": ""} for d in docs])))
+        _, packed, count = backend.pack("Where?", docs, base + 200)
+        self.assertGreater(len(packed[0]["text"]), 100)
+        self.assertEqual(packed[1]["text"], "b")
+        self.assertLessEqual(count, base + 200)
+
+    def test_run_resume_and_dry_export_guard(self):
+        with tempfile.TemporaryDirectory() as d, contextlib.redirect_stdout(io.StringIO()):
+            path, out = Path(d) / "input.json", Path(d) / "run"
+            path.write_text(json.dumps([{"id": 9, "question": "Where?", "answers": ["secret"],
+                                         "ctxs": [{"text": "Evidence"}]}]))
+            args = argparse.Namespace(input=str(path), output=str(out), config=None,
+                                      limit=None, dry_run=True, resume=False)
+            run(args)
+            trace_path = out / "traces.jsonl"
+            trace = list(records(trace_path))[0]
+            self.assertEqual(trace["critic_calls"], 0)
+            self.assertEqual(trace["revision_count"], 0)
+            self.assertEqual(trace["final_answer"], "MOCK_ONLY")
+            before = trace_path.read_bytes()
+            args.resume = True
+            run(args)
+            self.assertEqual(before, trace_path.read_bytes())
+            template = Path(d) / "sample.csv"
+            template.write_text("id,answer\n9,\n")
+            with self.assertRaises(ValueError):
+                submission(argparse.Namespace(traces=str(trace_path), template=str(template), output=str(Path(d)/"sub.csv")))
+            path.write_text("[]")
+            with self.assertRaises(ValueError):
+                run(args)
+
+    def test_submission_order_quoting_and_id_guards(self):
+        with tempfile.TemporaryDirectory() as d, contextlib.redirect_stdout(io.StringIO()):
+            trace, template, output = [Path(d) / n for n in ("traces.jsonl", "sample.csv", "sub.csv")]
+            trace.write_text('\n'.join(json.dumps({"id": rid, "backend": "hf", "final_answer": ans})
+                                      for rid, ans in [("2", "A, B"), ("1", 'a "quote"')]) + '\n')
+            template.write_text("id,answer\n1,\n2,\n")
+            args = argparse.Namespace(traces=str(trace), template=str(template), output=str(output))
+            submission(args)
+            with output.open(newline="") as f:
+                rows = list(csv.DictReader(f))
+            self.assertEqual([r["id"] for r in rows], ["1", "2"])
+            self.assertEqual(rows[1]["answer"], "A, B")
+            template.write_text("id,answer\n1,\n3,\n")
+            with self.assertRaises(ValueError):
+                submission(args)
+
+
+if __name__ == "__main__":
+    unittest.main()

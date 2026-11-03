@@ -1,0 +1,12 @@
+{
+  "backend": "hf",
+  "model": "Qwen/Qwen2.5-7B-Instruct",
+  "seed": 42,
+  "top_k": 10,
+  "retrieval_mode": "bm25",
+  "batch_size": 1,
+  "max_input_tokens": 6144,
+  "max_new_tokens": 64,
+  "dtype": "bfloat16",
+  "load_in_4bit": false
+}

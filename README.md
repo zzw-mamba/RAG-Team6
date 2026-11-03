@@ -1,3 +1,58 @@
+# RAG Team6 新版朴素 RAG baseline
+
+本分支 `feat/naive-rag-baseline-v2` 提供独立的 `naive-rag` 入口：使用每题自带 `ctxs`，保留原顺序最多 10 篇文档，由 Qwen2.5-7B-Instruct 一次生成答案。当前不接入批判模型、不训练模型。原有 `raglab` 和 `autodl/` 代码继续保留。
+
+- [新版完整运行说明](docs/NAIVE_BASELINE.md)
+- [经典 baseline 设计依据](docs/BASELINE_DESIGN.md)
+- [课程参考仓库分析](docs/REFERENCE_REVIEW.md)
+- [新版验证范围](docs/NAIVE_BASELINE_VALIDATION.md)
+
+## 服务器模型
+
+- Qwen：`/root/autodl-fs/zzw/models/Qwen2.5-7B-Instruct`。
+- LLaMA：`/root/autodl-fs/zzw/models/Llama-3.1-8B-Instruct`，记录供后续使用，当前不加载。
+- 服务器配置：`configs/autodl_baseline.json`。真实数据放 `data/raw/`，不提交 Git。
+
+## 新版运行入口
+
+新目录获取本分支（也可在已有仓库中 fetch 后切换该分支）：
+
+```bash
+git clone --branch feat/naive-rag-baseline-v2 https://github.com/zzw-mamba/RAG-Team6.git RAG-Team6-baseline-v2
+cd RAG-Team6-baseline-v2
+```
+
+从仓库根目录运行，Python 3.11/3.12；先安装适合服务器 CUDA 的 PyTorch：
+
+```bash
+python -m pip install -e '.[gpu]'
+naive-rag split --input data/raw/train.json --output data/prepared --seed 42 --fraction 0.1
+naive-rag run --input data/prepared/validation.jsonl --config configs/autodl_baseline.json --output outputs/baseline-v2-pilot --limit 20
+```
+
+验证后可去掉 `--limit 20`，使用新的输出目录运行完整验证集。真实测试与提交导出：
+
+```bash
+naive-rag run --input data/raw/test.json --config configs/autodl_baseline.json --output outputs/baseline-v2-test
+naive-rag submission --traces outputs/baseline-v2-test/traces.jsonl --template data/raw/sample_submission.csv --output outputs/baseline-v2-submission.csv
+```
+
+无 GPU 时可检查流程（仅产生 `MOCK_ONLY`，不能导出比赛提交）：
+
+```bash
+python -m pip install -e '.[dev]'
+python -m unittest discover -s tests -v
+naive-rag run --input examples/toy.json --config configs/autodl_baseline.json --output outputs/baseline-v2-smoke --dry-run
+```
+
+BM25 重排对照使用 `configs/baseline_bm25.json`；其中 `model` 仍为 Hugging Face 模型名，在服务器使用本地权重时先改成上面的 Qwen 路径。EM/F1 是本地诊断指标，不代表已复现 Kaggle Accuracy。尚未在目标服务器执行真实 7B 推理。
+
+## 上一代代码说明
+
+以下为上一代框架原说明，供兼容和后续开发参考；其中 AutoDL 双模型训练、批判与 RL 命令属于旧入口，与本分支新版单轮 baseline 分开使用。
+
+---
+
 # RAG Critic Lab
 
 面向 10 人小组协作的《人工智能原理与应用》RAG 大作业项目。

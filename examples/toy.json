@@ -1,0 +1,21 @@
+[
+  {
+    "id": "toy-0",
+    "question": "Where was the director of the fictional film Amber Bridge born?",
+    "answers": ["Willow Bay"],
+    "ctxs": [
+      {"id": "film", "title": "Amber Bridge", "text": "Amber Bridge is a fictional film directed by Lena Hart."},
+      {"id": "director", "title": "Lena Hart", "text": "In this synthetic example, Lena Hart was born in Willow Bay."},
+      {"id": "noise", "title": "Old Harbor", "text": "Old Harbor hosts a music festival."}
+    ]
+  },
+  {
+    "id": "toy-1",
+    "question": "Are fictional researchers Mira Sol and Theo Lake from the same city?",
+    "answers": ["yes"],
+    "ctxs": [
+      {"id": "mira", "title": "Mira Sol", "text": "Mira Sol is a fictional researcher from Pine City."},
+      {"id": "theo", "title": "Theo Lake", "text": "Theo Lake is a fictional researcher from Pine City."}
+    ]
+  }
+]

@@ -15,10 +15,12 @@ data = ["ijson>=3.3,<4"]
 hf = ["torch>=2.6,<2.9", "transformers>=4.56,<4.58", "accelerate>=1.9,<2", "peft>=0.17,<0.18"]
 train = ["rag-critic-lab[hf,data]", "datasets>=3.6,<5", "trl>=0.23,<0.24"]
 quant = ["bitsandbytes>=0.47,<0.49; sys_platform == 'linux'"]
+gpu = ["torch>=2.6,<2.9", "transformers>=4.56,<4.58", "accelerate>=1.9,<2", "safetensors>=0.4"]
 dev = ["ruff>=0.12,<1"]
 
 [project.scripts]
 raglab = "raglab.cli:main"
+naive-rag = "naive_rag.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -31,3 +31,6 @@ outputs/**
 *.pth
 *.bin
 wandb/
+
+# New single-pass baseline prepared splits
+data/prepared/
