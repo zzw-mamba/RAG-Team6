@@ -26,11 +26,11 @@
 python -m pip install -e '.[gpu]'
 ```
 
-下面假定完整训练文件位于 `data/raw/train.json`；若在其他目录，只替换 `--input` 路径。正式流程使用新的 `prepare-eval`，不与此前通用的 `split` 划分混用。
+以下命令使用 `/root/autodl-fs/zzw/data/train.json`；若实际文件名不同，只需替换 `--input` 路径。正式流程使用新的 `prepare-eval`，不与此前通用的 `split` 划分混用。
 
 ```bash
 # 1. 只准备一次，之后所有配置共用这些文件
-naive-rag prepare-eval --input data/raw/train.json --output data/evaluation-v1 --seed 42 --dev-size 500 --holdout-size 1000
+naive-rag prepare-eval --input /root/autodl-fs/zzw/data/train.json --output data/evaluation-v1 --seed 42 --dev-size 500 --holdout-size 1000
 
 # 2. 20 题真实 Qwen pilot，先确认输入、显存、格式与耗时
 naive-rag evaluate --input data/evaluation-v1/pilot.jsonl --config configs/autodl_baseline.json --output outputs/validation-v1/pilot

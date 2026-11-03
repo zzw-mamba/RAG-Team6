@@ -78,8 +78,9 @@ python -m pip install -e '.[gpu]'
 
 模型默认使用 `Qwen/Qwen2.5-7B-Instruct`；也可把配置中的 `model` 改为同一模型的本地权重目录。不要换成其他回答模型。支持 BF16 的 GPU 使用默认 `bfloat16`，不支持时改为 `float16`。如需 4bit，在受支持的 NVIDIA 环境安装 `pip install -e '.[quant]'` 并设置 `load_in_4bit=true`，记录精度变化。后续三组对比应使用相同精度。
 
-服务器模型路径已记录：
+服务器路径已记录：
 
+- 数据目录：`/root/autodl-fs/zzw/data/`。
 - Qwen：`/root/autodl-fs/zzw/models/Qwen2.5-7B-Instruct`。
 - LLaMA：`/root/autodl-fs/zzw/models/Llama-3.1-8B-Instruct`，供后续批判阶段使用，本 baseline 不加载。
 
@@ -91,11 +92,11 @@ naive-rag run --input data/prepared/validation.jsonl --config configs/autodl_bas
 
 这些服务器路径由你提供，尚未在本机验证其目录、权重完整性或 GPU 可用性。
 
-将实际下载的数据放入 `data/raw/`，至少包含 `train.json`、`test.json`、`sample_submission.csv`。不会自动下载、接受比赛协议或提交预测。
+服务器原始数据使用 `/root/autodl-fs/zzw/data/`，至少包含 `train.json`、`test.json`、`sample_submission.csv`。不会自动下载、接受比赛协议或提交预测。
 
 ```bash
 # 1. 按归一化问题分组做固定划分，同一问题不会跨集合
-naive-rag split --input data/raw/train.json --output data/prepared --seed 42 --fraction 0.1
+naive-rag split --input /root/autodl-fs/zzw/data/train.json --output data/prepared --seed 42 --fraction 0.1
 
 # 2. 小批验证，确认显存、输入、输出和每题时间
 naive-rag run --input data/prepared/validation.jsonl --config configs/baseline.json --output outputs/dev-pilot --limit 20
@@ -104,10 +105,10 @@ naive-rag run --input data/prepared/validation.jsonl --config configs/baseline.j
 naive-rag run --input data/prepared/validation.jsonl --config configs/baseline.json --output outputs/dev-baseline
 
 # 4. 配置确定后运行全部测试题
-naive-rag run --input data/raw/test.json --config configs/baseline.json --output outputs/test-baseline
+naive-rag run --input /root/autodl-fs/zzw/data/test.json --config configs/baseline.json --output outputs/test-baseline
 
 # 5. 严格沿用模板列名、ID 集合与行顺序，导出单个答案
-naive-rag submission --traces outputs/test-baseline/traces.jsonl --template data/raw/sample_submission.csv --output outputs/submission.csv
+naive-rag submission --traces outputs/test-baseline/traces.jsonl --template /root/autodl-fs/zzw/data/sample_submission.csv --output outputs/submission.csv
 ```
 
 划分采用 SHA256 哈希阈值，比例约为 10%，不是恰好 10%；近义改写、相同实体和不同问题可能仍有关联，并不保证实体级隔离。分组只做大小写和空格归一化。划分文件保留答案，推理阶段独立过滤。流式解析避免一次加载 1.65GB JSON。
@@ -125,7 +126,7 @@ naive-rag submission --traces outputs/test-baseline/traces.jsonl --template data
 输出目录默认必须不存在，避免覆盖旧实验。中断后使用原命令加 `--resume`，输入、实现代码、配置和 `--limit` 必须完全相同；已写入完整日志的题目会跳过。例如：
 
 ```bash
-naive-rag run --input data/raw/test.json --config configs/baseline.json --output outputs/test-baseline --resume
+naive-rag run --input /root/autodl-fs/zzw/data/test.json --config configs/baseline.json --output outputs/test-baseline --resume
 ```
 
 每条日志写后刷新到磁盘。若断电使最后一行 JSON 损坏，程序会拒绝续跑；先备份日志并移除不完整的末行，再续跑。修改输入或配置后应使用新输出目录。HF 权重路径若指向可变目录，应自行固定版本；日志不校验数 GB 模型权重的哈希。

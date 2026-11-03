@@ -12,7 +12,7 @@
 
 - Qwen：`/root/autodl-fs/zzw/models/Qwen2.5-7B-Instruct`。
 - LLaMA：`/root/autodl-fs/zzw/models/Llama-3.1-8B-Instruct`，记录供后续使用，当前不加载。
-- 服务器配置：`configs/autodl_baseline.json`。真实数据放 `data/raw/`，不提交 Git。
+- 服务器配置：`configs/autodl_baseline.json`。服务器数据目录为 `/root/autodl-fs/zzw/data/`，不提交 Git。
 
 ## 新版运行入口
 
@@ -27,7 +27,7 @@ cd RAG-Team6-baseline-v2
 
 ```bash
 python -m pip install -e '.[gpu]'
-naive-rag prepare-eval --input data/raw/train.json --output data/evaluation-v1 --seed 42 --dev-size 500 --holdout-size 1000
+naive-rag prepare-eval --input /root/autodl-fs/zzw/data/train.json --output data/evaluation-v1 --seed 42 --dev-size 500 --holdout-size 1000
 naive-rag evaluate --input data/evaluation-v1/pilot.jsonl --config configs/autodl_baseline.json --output outputs/validation-v1/pilot
 ```
 
@@ -41,8 +41,8 @@ naive-rag evaluate --input data/evaluation-v1/dev.jsonl --config configs/autodl_
 真实测试与提交导出：
 
 ```bash
-naive-rag run --input data/raw/test.json --config configs/autodl_baseline.json --output outputs/baseline-v2-test
-naive-rag submission --traces outputs/baseline-v2-test/traces.jsonl --template data/raw/sample_submission.csv --output outputs/baseline-v2-submission.csv
+naive-rag run --input /root/autodl-fs/zzw/data/test.json --config configs/autodl_baseline.json --output outputs/baseline-v2-test
+naive-rag submission --traces outputs/baseline-v2-test/traces.jsonl --template /root/autodl-fs/zzw/data/sample_submission.csv --output outputs/baseline-v2-submission.csv
 ```
 
 无 GPU 时可检查流程（仅产生 `MOCK_ONLY`，不能导出比赛提交）：
