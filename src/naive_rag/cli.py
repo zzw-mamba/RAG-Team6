@@ -214,6 +214,8 @@ def submission(args):
 
 
 def main():
+    from .validation import evaluate, prepare_eval, report
+
     parser = argparse.ArgumentParser(description="Qwen single-pass naive RAG baseline")
     sub = parser.add_subparsers(required=True)
     p = sub.add_parser("run")
@@ -235,6 +237,25 @@ def main():
     p.add_argument("--template", required=True)
     p.add_argument("--output", required=True)
     p.set_defaults(func=submission)
+    p = sub.add_parser("prepare-eval", help="Create fixed dev/holdout samples from labeled train data")
+    p.add_argument("--input", required=True)
+    p.add_argument("--output", required=True)
+    p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--dev-size", type=int, default=500)
+    p.add_argument("--holdout-size", type=int, default=1000)
+    p.set_defaults(func=prepare_eval)
+    p = sub.add_parser("evaluate", help="Run one configuration on a complete labeled input and report")
+    p.add_argument("--input", required=True)
+    p.add_argument("--output", required=True)
+    p.add_argument("--config")
+    p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--resume", action="store_true")
+    p.set_defaults(func=evaluate)
+    p = sub.add_parser("report", help="Recompute labeled evaluation from an existing complete run")
+    p.add_argument("--input", required=True)
+    p.add_argument("--run-dir", required=True)
+    p.add_argument("--output", required=True)
+    p.set_defaults(func=report)
     args = parser.parse_args()
     args.func(args)
 

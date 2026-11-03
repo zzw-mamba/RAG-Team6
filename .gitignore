@@ -34,3 +34,4 @@ wandb/
 
 # New single-pass baseline prepared splits
 data/prepared/
+data/evaluation*/

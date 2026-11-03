@@ -5,6 +5,7 @@
 - [新版完整运行说明](docs/NAIVE_BASELINE.md)
 - [经典 baseline 设计依据](docs/BASELINE_DESIGN.md)
 - [课程参考仓库分析](docs/REFERENCE_REVIEW.md)
+- [使用 train 验证效果](docs/TRAIN_VALIDATION.md)
 - [新版验证范围](docs/NAIVE_BASELINE_VALIDATION.md)
 
 ## 服务器模型
@@ -26,11 +27,18 @@ cd RAG-Team6-baseline-v2
 
 ```bash
 python -m pip install -e '.[gpu]'
-naive-rag split --input data/raw/train.json --output data/prepared --seed 42 --fraction 0.1
-naive-rag run --input data/prepared/validation.jsonl --config configs/autodl_baseline.json --output outputs/baseline-v2-pilot --limit 20
+naive-rag prepare-eval --input data/raw/train.json --output data/evaluation-v1 --seed 42 --dev-size 500 --holdout-size 1000
+naive-rag evaluate --input data/evaluation-v1/pilot.jsonl --config configs/autodl_baseline.json --output outputs/validation-v1/pilot
 ```
 
-验证后可去掉 `--limit 20`，使用新的输出目录运行完整验证集。真实测试与提交导出：
+pilot 通过后，用固定 500 题比较原顺序与 BM25；根据 dev 选定配置后，再在独立 1000 题 holdout 做最终确认。两配置和所有报告的运行命令见 [train 验证流程](docs/TRAIN_VALIDATION.md)。报告保存在各输出目录的 `report/`，包含 EM/F1、耗时、逐题 CSV 和失败样例。
+
+```bash
+naive-rag evaluate --input data/evaluation-v1/dev.jsonl --config configs/autodl_baseline.json --output outputs/validation-v1/dev-input
+naive-rag evaluate --input data/evaluation-v1/dev.jsonl --config configs/autodl_baseline_bm25.json --output outputs/validation-v1/dev-bm25
+```
+
+真实测试与提交导出：
 
 ```bash
 naive-rag run --input data/raw/test.json --config configs/autodl_baseline.json --output outputs/baseline-v2-test
@@ -45,7 +53,7 @@ python -m unittest discover -s tests -v
 naive-rag run --input examples/toy.json --config configs/autodl_baseline.json --output outputs/baseline-v2-smoke --dry-run
 ```
 
-BM25 重排对照使用 `configs/baseline_bm25.json`；其中 `model` 仍为 Hugging Face 模型名，在服务器使用本地权重时先改成上面的 Qwen 路径。EM/F1 是本地诊断指标，不代表已复现 Kaggle Accuracy。尚未在目标服务器执行真实 7B 推理。
+服务器 BM25 对照使用 `configs/autodl_baseline_bm25.json`，已写入相同的本地 Qwen 路径。通用配置 `configs/baseline_bm25.json` 仍使用 Hugging Face 模型名。EM/F1 是本地诊断指标，不代表已复现 Kaggle Accuracy。尚未在目标服务器执行真实 7B 推理。
 
 ## 上一代代码说明
 

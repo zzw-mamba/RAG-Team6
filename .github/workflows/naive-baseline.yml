@@ -7,6 +7,7 @@ on:
     paths:
       - 'src/naive_rag/**'
       - 'tests/test_baseline.py'
+      - 'tests/test_validation.py'
       - 'configs/*baseline*.json'
       - 'pyproject.toml'
       - '.github/workflows/naive-baseline.yml'
@@ -30,3 +31,5 @@ jobs:
       - run: python -m unittest discover -s tests -v
       - name: Check single-pass baseline without loading server weights
         run: naive-rag run --input examples/toy.json --config configs/autodl_baseline.json --output outputs/ci-baseline-smoke --dry-run
+      - name: Check labeled-data report without loading server weights
+        run: naive-rag evaluate --input examples/toy.json --config configs/autodl_baseline.json --output outputs/ci-evaluation-smoke --dry-run

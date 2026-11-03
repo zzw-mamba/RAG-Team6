@@ -68,6 +68,8 @@ naive-rag run --input examples/toy.json --output outputs/toy-check --dry-run
 
 ## 在 GPU 环境运行真实 baseline
 
+**使用 train 验证效果的固定开发集与独立确认集流程，见 [train 验证说明](TRAIN_VALIDATION.md)。**新增命令为 `prepare-eval` 和 `evaluate`，自动生成指标、逐题预测与案例报告。下面的 `split` 保留为通用划分入口；正式效果验证不与新流程混用。
+
 建议先用课程建议的 24GB 以上 NVIDIA GPU；实际显存占用与输入长度、批大小和精度有关，未在本机实测。先安装适合服务器 CUDA 的 PyTorch，再安装：
 
 ```bash

@@ -11,6 +11,13 @@
 ## 团队仓库整合验证
 
 - 在团队仓库主分支基础上添加独立 `naive-rag` 入口；原 `raglab` 和 `autodl/` 源代码没有修改。
-- 使用 Python 3.12 在独立环境安装团队项目开发依赖，51 项根目录测试全部通过，`ruff check .` 通过。
+- 使用 Python 3.12 在独立环境安装团队项目开发依赖，57 项根目录测试全部通过，`ruff check .` 通过。
 - 使用 `configs/autodl_baseline.json` 完成合成样本 dry-run，验证服务器路径配置能被读取而不会在检查模式下载或加载权重。
 - Qwen 与 LLaMA 服务器路径已写入配置或说明；尚未登录服务器或验证模型文件、CUDA、显存和真实效果。
+
+## 使用 train 的固定验证流程
+
+- 新增 `prepare-eval/evaluate/report`，以问题分组固定预留 dev 和 holdout，分别抽 500/1000 题，pilot 为 dev 的 20 题子集。
+- 新增 6 项验证流程检查；根目录合计 57 项测试通过，代码检查通过。
+- 使用合成样本完成 `evaluate` 命令行 smoke，生成中文报告、逐题 CSV 和案例 JSON，明确标注 DRY-RUN。
+- 未取得完整 train 或登录 GPU 服务器；没有生成或上传真实数据与模型成绩。
