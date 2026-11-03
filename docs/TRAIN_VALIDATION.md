@@ -105,3 +105,5 @@ python -m naive_rag.cli evaluate --input data/evaluation-v1/pilot.jsonl --config
 python -u -m naive_rag.cli run --input /root/autodl-fs/zzw/data/test.json --config configs/autodl_baseline_best_supported_batch8.json --output outputs/naive-rag-full-test-batch8 && \
 python -m naive_rag.cli submission --traces outputs/naive-rag-full-test-batch8/traces.jsonl --template /root/autodl-fs/zzw/data/sample_submission.csv --output outputs/submission-naive-rag-batch8.csv
 ```
+
+按需直接使用 batch 16：配置 `configs/autodl_baseline_best_supported_batch16.json`，仅将 batch 8 的批大小改为 16。全量运行使用新目录，例如 `outputs/naive-rag-full-test-batch16`；不可对旧批大小的运行使用该配置续跑。目标 GPU 上的显存与速度尚未实测。

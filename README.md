@@ -58,7 +58,7 @@ naive-rag run --input examples/toy.json --config configs/autodl_baseline.json --
 
 ## 全量推理提高批大小
 
-新增 `configs/autodl_baseline_best_supported_batch8.json`，批大小为 8，保留原 batch 1 配置用于复现。先在 pilot 检查显存、输出与吞吐，确认后使用新目录跑全量测试；具体命令见 [批量配置说明](docs/TRAIN_VALIDATION.md#全量推理的批量配置)。目标 RTX PRO 6000 的实际显存占用和加速效果尚未验证。
+全量 batch 16 配置为 `configs/autodl_baseline_best_supported_batch16.json`；另保留 batch 8 配置 `configs/autodl_baseline_best_supported_batch8.json` 和原 batch 1 配置用于复现。先在 pilot 检查显存、输出与吞吐，确认后使用新目录跑全量测试；具体命令见 [批量配置说明](docs/TRAIN_VALIDATION.md#全量推理的批量配置)。目标 RTX PRO 6000 的实际显存占用和加速效果尚未验证。
 
 ## 评分与拒答排查
 
